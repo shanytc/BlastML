@@ -598,14 +598,16 @@ def main():
 			save_weights=True,
 			save_history=True)
 
-	# Create simple CNN network
+	# Create a BlastML instance
+	Net = BlastML(cfg=cfg)
+
+	# Create a very simple CNN instance
 	# Net.simple().compile().train().evaluate().infer()
 
-	# creat a net instance with configurations
-	Net = BlastML(cfg=cfg)
+	# create a vgg16 instance
 	Net.vgg16().compile().train().evaluate()
 
-	# Create a custom CNN net
+	# Create a custom CNN instance
 	# Net.create()\
 	# 	.add_2d(filters=32, kernel=(3, 3), activation="relu", padding='same', input_shape=(224, 224, 3))\
 	# 	.add_2d(filters=32, kernel=(3, 3), activation='relu')\
@@ -621,8 +623,9 @@ def main():
 	# 	.train()\
 	# 	.evaluate()
 
-	#cfg.threads = 1
-	#res = Net.load_model().plot_history()#.infer()
-	#print(res)
+	# use the code below to load model, create history (optional) and infer (test) your files
+	# cfg.threads = 1  # better to use 1 thread, but you can change it.
+	# res = Net.load_model().plot_history().infer()
+	# print(res)  # show embeddings/classification results
 
 main()
