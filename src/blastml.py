@@ -75,7 +75,7 @@ def pil_loader(path):
 
 
 class CFG:
-	def __init__(self, image={}, hyper_params={}, multithreading={}, dataset={}, model={}):
+	def __init__(self, input_image={}, hyper_params={}, multithreading={}, dataset={}, model={}):
 		self.input_image_width = image['width'],
 		self.input_image_height = image['height'],
 		self.input_image_channels = image['channels'],
