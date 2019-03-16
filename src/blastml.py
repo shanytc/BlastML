@@ -12,6 +12,8 @@ from matplotlib.ticker import MaxNLocator
 import pickle
 import json
 
+
+# load image using Pillow
 def pil_loader(path):
 	# open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
 	with open(path, 'rb') as f:
@@ -20,6 +22,7 @@ def pil_loader(path):
 		img = img.convert('RGB')
 	return img
 
+#
 # Configurations:
 #
 # Activations
@@ -69,45 +72,32 @@ def pil_loader(path):
 # categorical
 # binary
 # sparse
+
+
 class CFG:
-	def __init__(self, batch=10,
-	             epochs=100,
-	             enable_multithreading=True,
-	             threads=10,
-	             train_path='',
-	             classes=100,
-	             validation_path='',
-	             infer_path='',
-	             model_output_path='',
-	             model_name='',
-	             optimizer='sgd',
-	             class_mode='binary',
-	             loss_function='sparse_categorical_crossentropy',
-	             compile_metrics=['metrics'],
-	             enable_saving=False,
-	             save_model=False,
-	             save_weights=False,
-	             save_history=False,
-	             load_model_embeddings = False):
-		self.batch = batch
-		self.epochs = epochs
-		self.enable_multithreading = enable_multithreading
-		self.threads = threads
-		self.train_path = train_path
-		self.validation_path = validation_path
-		self.infer_path = infer_path
-		self.model_output_path = model_output_path
-		self.model_name = model_name
-		self.optimizer = optimizer
-		self.loss_function = loss_function
-		self.compile_metrics = compile_metrics
-		self.save_model = save_model
-		self.save_weights = save_weights
-		self.save_history = save_history
-		self.enable_saving = enable_saving
-		self.load_model_embeddings = load_model_embeddings
-		self.num_classes = classes
-		self.class_mode = class_mode
+	def __init__(self, image={}, hyper_params={}, multithreading={}, dataset={}, model={}):
+		self.input_image_width = image['width'],
+		self.input_image_height = image['height'],
+		self.input_image_channels = image['channels'],
+		self.batch = hyper_params['batch']
+		self.epochs = hyper_params['epochs']
+		self.optimizer = hyper_params['optimizer']
+		self.loss_function = hyper_params['loss_function']
+		self.num_classes = hyper_params['classes']
+		self.class_mode = hyper_params['class_mode']
+		self.compile_metrics = hyper_params['compile_metrics']
+		self.enable_multithreading = multithreading['enable_multithreading']
+		self.threads = multithreading['threads']
+		self.train_path = dataset['train_path']
+		self.validation_path = dataset['validation_path']
+		self.infer_path = dataset['infer_path']
+		self.model_output_path = model['model_output_path']
+		self.model_name = model['model_name']
+		self.save_model = model['save_model']
+		self.save_weights = model['save_weights']
+		self.save_history = model['save_history']
+		self.enable_saving = model['enable_saving']
+		self.load_model_embeddings = model['load_model_embeddings']
 
 	def set_optimizer(self, optimizer=None):
 		if optimizer is None:
@@ -116,6 +106,15 @@ class CFG:
 		self.optimizer = optimizer
 
 		return self
+
+	def get_width(self):
+		return self.input_image_width[0]
+
+	def get_height(self):
+		return self.input_image_height[0]
+
+	def get_channels(self):
+		return self.input_image_channels[0]
 
 	def get_model_name(self):
 		return self.model_name
@@ -187,7 +186,7 @@ class BlastML:
 	def vgg16(self):
 		# layer 1
 		self.create()\
-		.add_zero_padding(input_shape=(224, 224, 3))\
+		.add_zero_padding(input_shape=(self.config.get_width(), self.config.get_height(), self.config.get_channels()))\
 		.add_2d(filters=64, kernel=(3, 3), activation="relu") \
 		.add_zero_padding() \
 		.add_2d(filters=64, kernel=(3, 3), activation='relu')\
@@ -232,7 +231,7 @@ class BlastML:
 
 		""" use of 6 conv layers, 1 fully connected """
 		model = Sequential()
-		model.add(Conv2D(32, (3, 3), padding='same', activation='relu', input_shape=(224, 224, 3)))  # 32 filters, size of 3x3
+		model.add(Conv2D(32, (3, 3), padding='same', activation='relu', input_shape=(self.config.get_width(), self.config.get_height(), self.config.get_channels())))
 		model.add(Conv2D(32, (3, 3), activation='relu'))
 		model.add(MaxPooling2D(pool_size=(2, 2)))
 		model.add(Dropout(0.25))
@@ -262,7 +261,7 @@ class BlastML:
 		self.model = Sequential()
 		return self
 
-	def add_2d(self, filters=32, kernel=(3,3), **kwargs):
+	def add_2d(self, filters=32, kernel=(3, 3), **kwargs):
 		# stride (1,1)
 		self.model.add(Conv2D(filters, kernel, **kwargs))  # 32 filters, size of 3x3
 		return self
@@ -310,7 +309,7 @@ class BlastML:
 				elif layer['class_name'] == 'Dense':  # remove dense layer (100 classes) keep 512 embeddings only
 					layer_config = layer['config']
 					name = layer_config['name']
-					if name == 'layer_fc':
+					if name == 'layer_classes':
 						del layer['config']
 						del layer['class_name']
 			while {} in layers:
@@ -371,13 +370,13 @@ class BlastML:
 
 		train_generator = train_datagen.flow_from_directory(
 			self.config.get_train_path(),
-			target_size=(224, 224),
+			target_size=(self.config.get_width(), self.config.get_height()),
 			batch_size=self.config.get_batch_size(),
 			class_mode=self.config.get_class_mode())
 
 		val_generator = valid_datagen.flow_from_directory(
 			self.config.get_validation_path(),
-			target_size=(224, 224),
+			target_size=(self.config.get_width(), self.config.get_height()),
 			batch_size=self.config.get_batch_size(),
 			class_mode=self.config.get_class_mode())
 
@@ -444,7 +443,7 @@ class BlastML:
 
 		test_generator = test_datagen.flow_from_directory(
 			directory=self.config.get_infer_path(),
-			target_size=(224, 224),
+			target_size=(self.config.get_width(), self.config.get_height()),
 			color_mode="rgb",
 			batch_size=self.config.get_batch_size(),
 			class_mode=self.config.get_class_mode(),
@@ -485,14 +484,14 @@ class BlastML:
 		train_datagen = ImageDataGenerator(rescale=1./255)
 		train_generator = train_datagen.flow_from_directory(
 			self.config.get_train_path(),
-			target_size=(224, 224),
+			target_size=(self.config.get_width(), self.config.get_height()),
 			batch_size=self.config.get_batch_size(),
 			class_mode=self.config.get_class_mode())
 
 		infer_datagen = ImageDataGenerator(rescale=1./255)
 		infer_generator = infer_datagen.flow_from_directory(
 			directory=self.config.get_infer_path(),
-			target_size=(224, 224),
+			target_size=(self.config.get_width(), self.config.get_height()),
 			color_mode="rgb",
 			batch_size=self.config.get_batch_size(),
 			class_mode=None,
@@ -508,8 +507,8 @@ class BlastML:
 
 		# get classes
 		if self.config.load_model_embeddings is False:
-			predicted_class_indices=np.argmax(embeddings, axis=1)  # get index of classes
-			labels = (train_generator.class_indices)
+			predicted_class_indices = np.argmax(embeddings, axis=1)  # get index of classes
+			labels = train_generator.class_indices
 			labels = dict((v, k) for k,v in labels.items())
 			pred_classes = [labels[k] for k in predicted_class_indices]
 
@@ -580,54 +579,68 @@ class BlastML:
 
 def main():
 	# Create a configuration settings for BlastML
-	cfg = CFG(batch=16,
-			epochs=10,
-			classes=5,
-			enable_multithreading=True,
-			threads=5,
-			class_mode='sparse',
-			optimizer='adam',
-			loss_function='sparse_categorical_crossentropy',
-			train_path='/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/train',
-			validation_path='/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/validation',
-			infer_path='/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/inference',
-			model_output_path='/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model',
-			model_name='shanynet',
-			load_model_embeddings=False,  # strip dropouts and fc layers
-			compile_metrics=['accuracy'],
-			enable_saving=True,
-			save_model=True,
-			save_weights=True,
-			save_history=True)
+	cfg = CFG(
+			image={
+				'width': 224,
+				'height': 224,
+				'channels': 3
+			},
+			hyper_params={
+				'batch': 16,
+				'epochs': 10,
+				'classes': 5,
+				'class_mode': 'sparse',
+				'optimizer': 'adam',
+				'loss_function': 'sparse_categorical_crossentropy',
+				'compile_metrics': ['accuracy']
+			},
+			multithreading={
+				'enable_multithreading': True,
+				'threads': 5
+			},
+			dataset={
+				'train_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/train',
+				'validation_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/validation',
+				'infer_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/inference',
+			},
+			model={
+				'model_output_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model',
+				'model_name': 'shanynet',
+				'load_model_embeddings': False,  # strip dropouts and fc layers
+				'enable_saving': True,
+				'save_model': True,
+				'save_weights': True,
+				'save_history': True
+			})
 
 	# Create a BlastML instance
-	Net = BlastML(cfg=cfg)
+	net = BlastML(cfg=cfg)
 
 	# Create a very simple CNN instance
 	# Net.simple().compile().train().evaluate().infer()
 
 	# create a vgg16 instance
-	Net.vgg16().compile().train().evaluate()
+	net.vgg16().compile().train().evaluate()
 
 	# Create a custom CNN instance
-	# Net.create()\
-	# 	.add_2d(filters=32, kernel=(3, 3), activation="relu", padding='same', input_shape=(224, 224, 3))\
-	# 	.add_2d(filters=32, kernel=(3, 3), activation='relu')\
-	# 	.add_max_pooling()\
-	# 	.add_dropout()\
-	# 	.add_basic_block()\
-	# 	.add_basic_block()\
-	# 	.add_flatten()\
-	# 	.add_dense(size=512, activation='relu', name="layer_features")\
-	# 	.add_dense(size=cfg.get_num_classes(), activation='softmax', name="layer_classes")\
-	# 	.show_model_summary()\
-	# 	.compile()\
-	# 	.train()\
-	# 	.evaluate()
+	net.create()\
+		.add_2d(filters=32, kernel=(3, 3), activation="relu", padding='same', input_shape=(net.config.get_width(), net.config.get_height(), net.config.get_channels()))\
+		.add_2d(filters=32, kernel=(3, 3), activation='relu')\
+		.add_max_pooling()\
+		.add_dropout()\
+		.add_basic_block()\
+		.add_basic_block()\
+		.add_flatten()\
+		.add_dense(size=512, activation='relu', name="layer_features")\
+		.add_dense(size=cfg.get_num_classes(), activation='softmax', name="layer_classes")\
+		.show_model_summary()\
+		.compile()\
+		.train()\
+		.evaluate()
 
 	# use the code below to load model, create history (optional) and infer (test) your files
 	# cfg.threads = 1  # better to use 1 thread, but you can change it.
-	# res = Net.load_model().plot_history().infer()
+	# res = net.load_model().plot_history().infer()
 	# print(res)  # show embeddings/classification results
 
 main()
