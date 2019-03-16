@@ -9,8 +9,30 @@ BlastML contains implementations of various well known and tested CNN such as:
 1. Simple (Basic CNN)
 2. VGG-16
 3. ResNet-18
-4. Custom CNN builder
 
+### CNN builder
+BlastML contains easy CNN building blocks which allows you to focus on building and testing your own CNN 
+without spending too much time on function names, parameters and other mixed setups.
+To build a custom network you simple call the create() function.
+
+Custom CNN Example:
+```
+Net.create()
+.add_2d(filters=32, kernel=(3, 3), activation="relu", padding='same', input_shape=(224, 224, 3))
+.add_2d(filters=32, kernel=(3, 3), activation='relu')
+.add_max_pooling()
+.add_dropout()
+.add_basic_block()
+.add_basic_block()
+.add_flatten()
+.add_dense(size=512, activation='relu', name="layer_features")
+.add_dense(size=cfg.get_num_classes(), activation='softmax', name="layer_classes")
+.show_model_summary()
+.compile()
+.train()
+.evaluate()
+```
+	
 ### How to use BlastML
 
 ##### Train and Evaluate
