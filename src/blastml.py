@@ -20,6 +20,157 @@ def pil_loader(path):
 		img = img.convert('RGB')
 	return img
 
+# Configurations:
+#
+# Activations
+# ============
+# 'softmax'
+# 'relu'
+# 'sigmoid'
+# 'elu'
+# 'selu'
+# 'softplus'
+# 'softsign'
+# 'tanh'
+# 'hard_sigmoid'
+# 'exponential'
+# 'linear'
+
+# Optimizers:
+# =============
+# 'RMSprop' / optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0)
+# 'Adagrad'
+# 'Adadelta'
+# 'Adam'
+# 'Adamax'
+# 'Nadam'
+# 'SGD' / optimizers.SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+# 'adam' / optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+
+# Loss Functions
+# ==============
+# 'mean_squared_error'
+# 'mean_absolute_error'
+# 'mean_absolute_percentage_error'
+# 'mean_squared_logarithmic_error'
+# 'squared_hinge'
+# 'hinge'
+# 'categorical_hinge'
+# 'logcosh'
+# 'categorical_crossentropy'
+# 'sparse_categorical_crossentropy'
+# 'binary_crossentropy'
+# 'kullback_leibler_divergence'
+# 'poisson'
+# 'cosine_proximity'
+
+# Class Modes
+# ============
+# categorical
+# binary
+# sparse
+class CFG:
+	def __init__(self, batch=10,
+	             epochs=100,
+	             enable_multithreading=True,
+	             threads=10,
+	             train_path='',
+	             classes=100,
+	             validation_path='',
+	             infer_path='',
+	             model_output_path='',
+	             model_name='',
+	             optimizer='sgd',
+	             class_mode='binary',
+	             loss_function='sparse_categorical_crossentropy',
+	             compile_metrics=['metrics'],
+	             enable_saving=False,
+	             save_model=False,
+	             save_weights=False,
+	             save_history=False,
+	             load_model_embeddings = False):
+		self.batch = batch
+		self.epochs = epochs
+		self.enable_multithreading = enable_multithreading
+		self.threads = threads
+		self.train_path = train_path
+		self.validation_path = validation_path
+		self.infer_path = infer_path
+		self.model_output_path = model_output_path
+		self.model_name = model_name
+		self.optimizer = optimizer
+		self.loss_function = loss_function
+		self.compile_metrics = compile_metrics
+		self.save_model = save_model
+		self.save_weights = save_weights
+		self.save_history = save_history
+		self.enable_saving = enable_saving
+		self.load_model_embeddings = load_model_embeddings
+		self.num_classes = classes
+		self.class_mode = class_mode
+
+	def set_optimizer(self, optimizer=None):
+		if optimizer is None:
+			return self
+
+		self.optimizer = optimizer
+
+		return self
+
+	def get_model_name(self):
+		return self.model_name
+
+	def get_model_output_path(self):
+		if self.model_output_path[-1] == '/':
+			return self.model_output_path
+
+		return self.model_output_path + '/'
+
+	def get_should_save_history(self):
+		return self.save_history
+
+	def get_should_save_weights(self):
+		return self.save_weights
+
+	def get_should_save_model(self):
+		return self.save_model
+
+	def get_train_path(self):
+		return self.train_path
+
+	def get_validation_path(self):
+		return self.validation_path
+
+	def get_infer_path(self):
+		return self.infer_path
+
+	def get_num_epochs(self):
+		return self.epochs
+
+	def get_batch_size(self):
+		return self.batch
+
+	def get_num_classes(self):
+		return self.num_classes
+
+	def get_class_mode(self):
+		return self.class_mode
+
+	def get_num_threads(self):
+		return self.threads
+
+	def get_multithreading_status(self):
+		return self.enable_multithreading
+
+	def get_optimizer(self):
+		return self.optimizer
+
+	def get_loss_function(self):
+		return self.loss_function
+
+	def get_compile_metrics(self):
+		return self.compile_metrics
+
 
 class BlastML:
 	def __init__(self, cfg=None):
@@ -426,158 +577,9 @@ class BlastML:
 	def get_predictions_indexes(self):
 		return np.argmax(self.predictions, axis=1)
 
-class CFG:
-	def __init__(self, batch=10,
-			epochs=100,
-			enable_multithreading=True,
-			threads=10,
-			train_path='',
-			classes=100,
-			validation_path='',
-			infer_path='',
-			model_output_path='',
-			model_name='',
-			optimizer='sgd',
-			class_mode='binary',
-			loss_function='sparse_categorical_crossentropy',
-			compile_metrics=['metrics'],
-			enable_saving=False,
-			save_model=False,
-			save_weights=False,
-			save_history=False,
-			load_model_embeddings = False):
-		self.batch = batch
-		self.epochs = epochs
-		self.enable_multithreading = enable_multithreading
-		self.threads = threads
-		self.train_path = train_path
-		self.validation_path = validation_path
-		self.infer_path = infer_path
-		self.model_output_path = model_output_path
-		self.model_name = model_name
-		self.optimizer = optimizer
-		self.loss_function = loss_function
-		self.compile_metrics = compile_metrics
-		self.save_model = save_model
-		self.save_weights = save_weights
-		self.save_history = save_history
-		self.enable_saving = enable_saving
-		self.load_model_embeddings = load_model_embeddings
-		self.num_classes = classes
-		self.class_mode = class_mode
-
-	def set_optimizer(self, optimizer=None):
-		if optimizer is None:
-			return self
-
-		self.optimizer = optimizer
-
-		return self
-
-	def get_model_name(self):
-		return self.model_name
-
-	def get_model_output_path(self):
-		if self.model_output_path[-1] == '/':
-			return self.model_output_path
-
-		return self.model_output_path + '/'
-
-	def get_should_save_history(self):
-		return self.save_history
-
-	def get_should_save_weights(self):
-		return self.save_weights
-
-	def get_should_save_model(self):
-		return self.save_model
-
-	def get_train_path(self):
-		return self.train_path
-
-	def get_validation_path(self):
-		return self.validation_path
-
-	def get_infer_path(self):
-		return self.infer_path
-
-	def get_num_epochs(self):
-		return self.epochs
-
-	def get_batch_size(self):
-		return self.batch
-
-	def get_num_classes(self):
-		return self.num_classes
-
-	def get_class_mode(self):
-		return self.class_mode
-
-	def get_num_threads(self):
-		return self.threads
-
-	def get_multithreading_status(self):
-		return self.enable_multithreading
-
-	def get_optimizer(self):
-		return self.optimizer
-
-	def get_loss_function(self):
-		return self.loss_function
-
-	def get_compile_metrics(self):
-		return self.compile_metrics
-
 
 def main():
-	# Activations
-	# ============
-	# 'softmax'
-	# 'relu'
-	# 'sigmoid'
-	# 'elu'
-	# 'selu'
-	# 'softplus'
-	# 'softsign'
-	# 'tanh'
-	# 'hard_sigmoid'
-	# 'exponential'
-	# 'linear'
-
-	# Optimizers:
-	# =============
-	# 'RMSprop' / optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0)
-	# 'Adagrad'
-	# 'Adadelta'
-	# 'Adam'
-	# 'Adamax'
-	# 'Nadam'
-	# 'SGD' / optimizers.SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-	# 'adam' / optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
-
-	# Loss Functions
-	# ==============
-	# 'mean_squared_error'
-	# 'mean_absolute_error'
-	# 'mean_absolute_percentage_error'
-	# 'mean_squared_logarithmic_error'
-	# 'squared_hinge'
-	# 'hinge'
-	# 'categorical_hinge'
-	# 'logcosh'
-	# 'categorical_crossentropy'
-	# 'sparse_categorical_crossentropy'
-	# 'binary_crossentropy'
-	# 'kullback_leibler_divergence'
-	# 'poisson'
-	# 'cosine_proximity'
-
-	# Class Modes
-	# ============
-	# categorical
-	# binary
-	# sparse
-
+	# Create a configuration settings for BlastML
 	cfg = CFG(batch=16,
 			epochs=10,
 			classes=5,
