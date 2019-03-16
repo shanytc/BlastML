@@ -38,7 +38,7 @@ Net.create()
 ##### Train and Evaluate
 BlastML makes it so easy to use, that all you need is to:
 1. Create data-set folders with data: 
-    1. create a .train folder
+    1. create a /train folder
     2. create a /validation folder
     3. create an /inference folder
     4. create a /model folder (where the model will be saved)
