@@ -3,7 +3,7 @@ import shutil
 from PIL import Image
 import numpy as np
 from keras.models import Sequential, model_from_json
-from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, ZeroPadding2D
+from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, ZeroPadding2D, BatchNormalization, LeakyReLU, AveragePooling2D
 from keras.preprocessing.image import ImageDataGenerator
 from keras.callbacks import History
 from keras.optimizers import Adam, RMSprop, SGD
@@ -183,8 +183,55 @@ class BlastML:
 		self.classes = None
 		self.history = None
 
+
+	def resnet18(self):
+		self.create() \
+		.add_2d(filters=64, kernel=(7, 7), strides=(2, 2), activation='relu', padding='same', input_shape=(self.config.get_width(), self.config.get_height(), self.config.get_channels())) \
+		.add_batch_normalize(axis=3) \
+		.add_max_pooling(size=(3, 3), strides=(2, 2), padding='same') \
+		.add_2d(filters=64, kernel=(3, 3), strides=(1, 1),  activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=64, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=64, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=64, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=128, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=128, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_2d(filters=128, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=128, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=128, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=256, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=256, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_2d(filters=256, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=256, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=256, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=512, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=512, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_2d(filters=512, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=512, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_2d(filters=512, kernel=(3, 3), strides=(1, 1), activation='relu', padding='same') \
+		.add_batch_normalize(axis=3) \
+		.add_average_pooling(size=(1, 1), strides=(1, 1)) \
+		.add_flatten() \
+		.add_dense(size=self.config.get_num_classes(), activation='softmax', name="layer_classes") \
+		.show_model_summary()
+
+		return self
+
 	def vgg16(self):
-		# layer 1
 		self.create()\
 		.add_zero_padding(input_shape=(self.config.get_width(), self.config.get_height(), self.config.get_channels()))\
 		.add_2d(filters=64, kernel=(3, 3), activation="relu") \
@@ -249,7 +296,7 @@ class BlastML:
 		model.add(Flatten())  # flat
 		model.add(Dense(512, activation='relu', name="layer_features"))
 		model.add(Dropout(0.5))
-		model.add(Dense(size=self.config.get_num_classes(), activation='softmax', name="layer_classes"))  # 100 classes
+		model.add(Dense(size=self.config.get_num_classes(), activation='softmax', name="layer_classes"))  # number of classes
 
 		model.summary()
 		self.model = model
@@ -270,8 +317,20 @@ class BlastML:
 		self.model.add(ZeroPadding2D(padding=padding, **kwargs))
 		return self
 
-	def add_max_pooling(self, size=(2, 2), strides=None):
-		self.model.add(MaxPooling2D(pool_size=size, strides=strides))  # 2x2 max pooling
+	def add_leaky_relu(self):
+		self.model.add(LeakyReLU())
+		return self
+
+	def add_batch_normalize(self, **kwargs):
+		self.model.add(BatchNormalization(**kwargs))
+		return self
+
+	def add_max_pooling(self, size=(2, 2), strides=None, **kwargs):
+		self.model.add(MaxPooling2D(pool_size=size, strides=strides, **kwargs))  # 2x2 max pooling
+		return self
+
+	def add_average_pooling(self, size=(2, 2), strides=None, **kwargs):
+		self.model.add(AveragePooling2D(pool_size=size, strides=strides, **kwargs))
 		return self
 
 	def add_dropout(self, dropout=0.25):
@@ -620,23 +679,26 @@ def main():
 	# Net.simple().compile().train().evaluate().infer()
 
 	# create a vgg16 instance
-	net.vgg16().compile().train().evaluate()
+	# net.vgg16().compile().train().evaluate()
+
+	#  create a resnet18 instance
+	net.resnet18().compile().train().evaluate()
 
 	# Create a custom CNN instance
-	net.create()\
-		.add_2d(filters=32, kernel=(3, 3), activation="relu", padding='same', input_shape=(net.config.get_width(), net.config.get_height(), net.config.get_channels()))\
-		.add_2d(filters=32, kernel=(3, 3), activation='relu')\
-		.add_max_pooling()\
-		.add_dropout()\
-		.add_basic_block()\
-		.add_basic_block()\
-		.add_flatten()\
-		.add_dense(size=512, activation='relu', name="layer_features")\
-		.add_dense(size=cfg.get_num_classes(), activation='softmax', name="layer_classes")\
-		.show_model_summary()\
-		.compile()\
-		.train()\
-		.evaluate()
+	# net.create()\
+	# 	.add_2d(filters=32, kernel=(3, 3), activation="relu", padding='same', input_shape=(net.config.get_width(), net.config.get_height(), net.config.get_channels()))\
+	# 	.add_2d(filters=32, kernel=(3, 3), activation='relu')\
+	# 	.add_max_pooling()\
+	# 	.add_dropout()\
+	# 	.add_basic_block()\
+	# 	.add_basic_block()\
+	# 	.add_flatten()\
+	# 	.add_dense(size=512, activation='relu', name="layer_features")\
+	# 	.add_dense(size=cfg.get_num_classes(), activation='softmax', name="layer_classes")\
+	# 	.show_model_summary()\
+	# 	.compile()\
+	# 	.train()\
+	# 	.evaluate()
 
 	# use the code below to load model, create history (optional) and infer (test) your files
 	# cfg.threads = 1  # better to use 1 thread, but you can change it.
