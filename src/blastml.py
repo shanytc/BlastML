@@ -396,6 +396,15 @@ class BlastML:
 		return self
 
 	def export_to_tf(self):
+		#
+		# Export Generates 4 files:
+		# -------------------------
+		# checkpoint defines the model checkpoint path which is "tf_model" in our case.
+		# .meta stores the graph structure,
+		# .data stores the values of each variable in the graph
+		# .index identifies the checkpoint.
+		#
+
 		saver = tf.train.Saver()
 		sess = K.get_session()
 		saver.save(sess, self.config.get_model_output_path() + self.config.get_model_name() + ".tf")
