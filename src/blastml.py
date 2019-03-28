@@ -6,6 +6,8 @@ from keras.models import Sequential, model_from_json
 from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, ZeroPadding2D, BatchNormalization, LeakyReLU, AveragePooling2D
 from keras.preprocessing.image import ImageDataGenerator
 from keras.callbacks import History
+from keras import backend as K
+import tensorflow as tf
 from keras.optimizers import Adam, RMSprop, SGD
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
@@ -97,6 +99,7 @@ class CFG:
 		self.save_weights = model['save_weights']
 		self.save_history = model['save_history']
 		self.enable_saving = model['enable_saving']
+		self.reset_learn_phase = model['reset_learn_phase']
 		self.load_model_embeddings = model['load_model_embeddings']
 
 	def set_optimizer(self, optimizer=None):
@@ -379,6 +382,8 @@ class BlastML:
 			json_file = open(self.config.get_model_output_path() + self.config.get_model_name() + '.json', 'r')
 			model_json = json_file.read()
 
+		if self.config.reset_learn_phase:
+			K.set_learning_phase(0)
 		model = model_from_json(model_json)
 		model.load_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".h5", by_name=True)
 
@@ -388,6 +393,14 @@ class BlastML:
 		with open(self.config.get_model_output_path() + self.config.get_model_name() + '.history', 'rb') as f:
 			self.history = pickle.load(f)
 
+		return self
+
+	def export_to_tf(self):
+		saver = tf.train.Saver()
+		sess = K.get_session()
+		saver.save(sess, self.config.get_model_output_path() + self.config.get_model_name() + ".tf")
+		fw = tf.summary.FileWriter('logs', sess.graph)
+		fw.close()
 		return self
 
 	def show_model_summary(self):
@@ -669,7 +682,8 @@ def main():
 				'enable_saving': True,
 				'save_model': True,
 				'save_weights': True,
-				'save_history': True
+				'save_history': True,
+				'reset_learn_phase': True
 			})
 
 	# Create a BlastML instance
@@ -682,7 +696,7 @@ def main():
 	# net.vgg16().compile().train().evaluate()
 
 	#  create a resnet18 instance
-	net.resnet18().compile().train().evaluate()
+	# net.resnet18().compile().train().evaluate()
 
 	# Create a custom CNN instance
 	# net.create()\
@@ -701,8 +715,8 @@ def main():
 	# 	.evaluate()
 
 	# use the code below to load model, create history (optional) and infer (test) your files
-	# cfg.threads = 1  # better to use 1 thread, but you can change it.
-	# res = net.load_model().plot_history().infer()
+	cfg.threads = 1  # better to use 1 thread, but you can change it.
+	res = net.load_model().export_to_tf()#.plot_history().infer()
 	# print(res)  # show embeddings/classification results
 
 main()
