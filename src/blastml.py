@@ -88,6 +88,7 @@ class CFG:
 		self.num_classes = hyper_params['classes']
 		self.class_mode = hyper_params['class_mode']
 		self.compile_metrics = hyper_params['compile_metrics']
+		self.shuffle_training = hyper_params['shuffle']
 		self.enable_multithreading = multithreading['enable_multithreading']
 		self.threads = multithreading['threads']
 		self.train_path = dataset['train_path']
@@ -101,6 +102,7 @@ class CFG:
 		self.enable_saving = model['enable_saving']
 		self.reset_learn_phase = model['reset_learn_phase']
 		self.load_model_embeddings = model['load_model_embeddings']
+		self.save_bottleneck_features = model['save_bottleneck_features']
 		self.augmentation = augmentation
 
 	def is_augmentation_enagled(self):
@@ -141,6 +143,9 @@ class CFG:
 	def get_should_save_model(self):
 		return self.save_model
 
+	def get_should_save_bottleneck_features(self):
+		return self.save_bottleneck_features
+
 	def get_train_path(self):
 		return self.train_path
 
@@ -158,6 +163,9 @@ class CFG:
 
 	def get_num_classes(self):
 		return self.num_classes
+
+	def get_shuffle_training(self):
+		return self.shuffle_training
 
 	def get_class_mode(self):
 		return self.class_mode
@@ -189,7 +197,7 @@ class BlastML:
 		self.predictions = None
 		self.classes = None
 		self.history = None
-
+		self.bottleneck = None
 
 	def resnet18(self):
 		self.create() \
@@ -282,7 +290,6 @@ class BlastML:
 		return self
 
 	def simple(self):
-
 		""" use of 6 conv layers, 1 fully connected """
 		model = Sequential()
 		model.add(Conv2D(32, (3, 3), padding='same', activation='relu', input_shape=(self.config.get_width(), self.config.get_height(), self.config.get_channels())))
@@ -313,6 +320,14 @@ class BlastML:
 	def create(self):
 		self.model = None
 		self.model = Sequential()
+		return self
+
+	def reset(self):
+		self.model = None
+		self.predictions = None
+		self.classes = None
+		self.history = None
+		self.bottleneck = None
 		return self
 
 	def add_2d(self, filters=32, kernel=(3, 3), **kwargs):
@@ -361,8 +376,12 @@ class BlastML:
 		return self
 
 	def load_model(self):
+		# reset the model
+		self.reset()
+		model_json = None
+
 		# prepare json for embeddings only
-		if self.config.load_model_embeddings is True:
+		if self.config.load_model_embeddings is True and os.path.isfile(self.config.get_model_output_path() + self.config.get_model_name() + '.json'):
 			with open(self.config.get_model_output_path() + self.config.get_model_name() + '.json', 'r') as f:
 				json_file = json.load(f)
 
@@ -383,19 +402,28 @@ class BlastML:
 
 			model_json = json.dumps(json_file)
 		else:
-			json_file = open(self.config.get_model_output_path() + self.config.get_model_name() + '.json', 'r')
-			model_json = json_file.read()
+			if os.path.isfile(self.config.get_model_output_path() + self.config.get_model_name() + '.json'):
+				json_file = open(self.config.get_model_output_path() + self.config.get_model_name() + '.json', 'r')
+				model_json = json_file.read()
 
 		if self.config.reset_learn_phase:
 			K.set_learning_phase(0)
-		model = model_from_json(model_json)
-		model.load_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".h5", by_name=True)
 
-		self.model = model
+		if model_json is not None:
+			model = model_from_json(model_json)
+
+			if os.path.isfile(self.config.get_model_output_path() + self.config.get_model_name() + '.h5'):
+				model.load_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".h5", by_name=True)
+
+			self.model = model
+
+		if os.path.isfile(self.config.get_model_output_path() + self.config.get_model_name() + '.features'):
+			self.bottleneck = np.load(open(self.config.get_model_output_path() + self.config.get_model_name() + '.features'))
 
 		# load history
-		with open(self.config.get_model_output_path() + self.config.get_model_name() + '.history', 'rb') as f:
-			self.history = pickle.load(f)
+		if os.path.isfile(self.config.get_model_output_path() + self.config.get_model_name() + '.history'):
+			with open(self.config.get_model_output_path() + self.config.get_model_name() + '.history', 'rb') as f:
+				self.history = pickle.load(f)
 
 		return self
 
@@ -517,13 +545,15 @@ class BlastML:
 			self.config.get_train_path(),
 			target_size=(self.config.get_width(), self.config.get_height()),
 			batch_size=self.config.get_batch_size(),
-			class_mode=self.config.get_class_mode())
+			class_mode=self.config.get_class_mode(),
+			shuffle=self.config.get_shuffle_training())
 
 		val_generator = valid_datagen.flow_from_directory(
 			self.config.get_validation_path(),
 			target_size=(self.config.get_width(), self.config.get_height()),
 			batch_size=self.config.get_batch_size(),
-			class_mode=self.config.get_class_mode())
+			class_mode=self.config.get_class_mode(),
+			shuffle=self.config.get_shuffle_training())
 
 		# steps for training
 		steps = train_generator.n/train_generator.batch_size
@@ -532,7 +562,7 @@ class BlastML:
 		self.history = History()
 
 		print("Training network...")
-		self.model.fit_generator(
+		train_bottleneck_features = self.model.fit_generator(
 			train_generator,
 			steps_per_epoch=steps,
 			epochs=self.config.get_num_epochs(),
@@ -546,7 +576,7 @@ class BlastML:
 		if self.config.enable_saving is True:
 
 			# remove old model when all saving features are enabled
-			if self.config.get_should_save_model() and self.config.get_should_save_weights() and self.config.get_should_save_history():
+			if self.config.get_model_name() != '' and self.config.get_should_save_model() and self.config.get_should_save_weights() and self.config.get_should_save_history() and self.config.get_should_save_bottleneck_features():
 				print("Removing old Model...")
 				# remove content of output folder (clear model data)
 				for the_file in os.listdir(self.config.get_model_output_path()):
@@ -575,6 +605,9 @@ class BlastML:
 					pickle.dump(self.history.history, f)
 				print("Model's history saved.")
 
+			if self.config.get_should_save_bottleneck_features() is True and self.config.get_model_name() != '':
+				# Save features as numpy array
+				np.save(open(self.config.get_model_output_path() + self.config.get_model_name() + '.features', 'w'), train_bottleneck_features)
 		return self
 
 	def evaluate(self):
@@ -770,9 +803,10 @@ def main():
 			},
 			hyper_params={
 				'batch': 16,
-				'epochs': 10,
+				'epochs': 1,
 				'classes': 5,
 				'class_mode': 'sparse',
+				'shuffle': False,
 				'optimizer': 'adam',
 				'loss_function': 'sparse_categorical_crossentropy',
 				'compile_metrics': ['accuracy']
@@ -794,6 +828,7 @@ def main():
 				'save_model': True,
 				'save_weights': True,
 				'save_history': True,
+				'save_bottleneck_features': True,
 				'reset_learn_phase': True
 			})
 
@@ -801,10 +836,10 @@ def main():
 	net = BlastML(cfg=cfg)
 
 	# Create a very simple CNN instance
-	# Net.simple().compile().train().evaluate().infer()
+	# net.simple().compile().train().evaluate().infer()
 
 	# create a vgg16 instance
-	net.vgg16().compile().train().evaluate()
+	#net.vgg16().compile().train().evaluate()
 
 	#  create a resnet18 instance
 	# net.resnet18().compile().train().evaluate()
