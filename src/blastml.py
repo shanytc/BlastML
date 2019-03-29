@@ -77,7 +77,7 @@ def pil_loader(path):
 
 
 class CFG:
-	def __init__(self, image={}, hyper_params={}, multithreading={}, dataset={}, model={}):
+	def __init__(self, image={}, augmentation={}, hyper_params={}, multithreading={}, dataset={}, model={}):
 		self.input_image_width = image['width'],
 		self.input_image_height = image['height'],
 		self.input_image_channels = image['channels'],
@@ -101,6 +101,10 @@ class CFG:
 		self.enable_saving = model['enable_saving']
 		self.reset_learn_phase = model['reset_learn_phase']
 		self.load_model_embeddings = model['load_model_embeddings']
+		self.augmentation = augmentation
+
+	def is_augmentation_enagled(self):
+		return self.is_augment_enabled
 
 	def set_optimizer(self, optimizer=None):
 		if optimizer is None:
@@ -396,6 +400,9 @@ class BlastML:
 		return self
 
 	def export_to_tf(self):
+		if self.model is None:
+			print("No model found to export")
+			return self
 		#
 		# Export Generates 4 files:
 		# -------------------------
@@ -414,6 +421,24 @@ class BlastML:
 
 	def show_model_summary(self):
 		self.model.summary()
+		return self
+
+	def freeze_model_layers(self, num_of_layers):
+		if self.model is None:
+			return self
+
+		for layer in self.model.layers[:num_of_layers]:
+			layer.trainable = False
+
+		return self
+
+	def unfreeze_model_layers(self):
+		if self.model is None:
+			return self
+
+		for layer in self.model.layers:
+			layer.trainable = True
+
 		return self
 
 	def get_model(self):
@@ -446,8 +471,47 @@ class BlastML:
 		if self.config.get_train_path() == '':
 			return self
 
+
+		# default with no augmentation (except rescale)
 		train_datagen = ImageDataGenerator(rescale=1./255)
-		valid_datagen = ImageDataGenerator(rescale=1./255, shear_range=0.2, zoom_range=0.2, horizontal_flip=True)
+		valid_datagen = ImageDataGenerator(rescale=1./255)
+
+		# use customised augmentation settings
+		if self.config.augmentation['train']['enable']:
+			train_datagen = ImageDataGenerator(
+				rescale=self.config.augmentation['train']['rescale'],
+				samplewise_center=self.config.augmentation['train']['samplewise_center'],
+				featurewise_std_normalization=self.config.augmentation['train']['featurewise_std_normalization'],
+				samplewise_std_normalization=self.config.augmentation['train']['samplewise_std_normalization'],
+				rotation_range=self.config.augmentation['train']['rotation_range'],
+				width_shift_range=self.config.augmentation['train']['width_shift_range'],
+				height_shift_range=self.config.augmentation['train']['height_shift_range'],
+				brightness_range=self.config.augmentation['train']['brightness_range'],
+				shear_range=self.config.augmentation['train']['shear_range'],
+				zoom_range=self.config.augmentation['train']['zoom_range'],
+				channel_shift_range=self.config.augmentation['train']['channel_shift_range'],
+				fill_mode=self.config.augmentation['train']['fill_mode'],
+				horizontal_flip=self.config.augmentation['train']['horizontal_flip'],
+				vertical_flip=self.config.augmentation['train']['vertical_flip'],
+			)
+
+		if self.config.augmentation['validation']['enable']:
+			valid_datagen = ImageDataGenerator(
+				rescale=self.config.augmentation['validation']['rescale'],
+				samplewise_center=self.config.augmentation['validation']['samplewise_center'],
+				featurewise_std_normalization=self.config.augmentation['validation']['featurewise_std_normalization'],
+				samplewise_std_normalization=self.config.augmentation['validation']['samplewise_std_normalization'],
+				rotation_range=self.config.augmentation['validation']['rotation_range'],
+				width_shift_range=self.config.augmentation['validation']['width_shift_range'],
+				height_shift_range=self.config.augmentation['validation']['height_shift_range'],
+				brightness_range=self.config.augmentation['validation']['brightness_range'],
+				shear_range=self.config.augmentation['validation']['shear_range'],
+				zoom_range=self.config.augmentation['validation']['zoom_range'],
+				channel_shift_range=self.config.augmentation['validation']['channel_shift_range'],
+				fill_mode=self.config.augmentation['validation']['fill_mode'],
+				horizontal_flip=self.config.augmentation['validation']['horizontal_flip'],
+				vertical_flip=self.config.augmentation['validation']['vertical_flip'],
+			)
 
 		train_generator = train_datagen.flow_from_directory(
 			self.config.get_train_path(),
@@ -666,6 +730,44 @@ def main():
 				'height': 224,
 				'channels': 3
 			},
+			augmentation={
+				'train': {
+					'enable': True,
+					'featurewise_center': False,
+					'samplewise_center': False,
+					'featurewise_std_normalization': False,
+					'samplewise_std_normalization': False,
+					'rotation_range': 0,
+					'width_shift_range': 0.0,
+					'height_shift_range': 0.0,
+					'brightness_range': None,
+					'shear_range': 0.2,
+					'zoom_range': 0.2,
+					'channel_shift_range': 0.0,
+					'fill_mode': 'nearest',
+					'horizontal_flip': True,
+					'vertical_flip': True,
+					'rescale': 1./255
+				},
+				'validation': {
+					'enable': True,
+					'featurewise_center': False,
+					'samplewise_center': False,
+					'featurewise_std_normalization': False,
+					'samplewise_std_normalization': False,
+					'rotation_range': 0,
+					'width_shift_range': 0.0,
+					'height_shift_range': 0.0,
+					'brightness_range': None,
+					'shear_range': 0.2,
+					'zoom_range': 0.2,
+					'channel_shift_range': 0.0,
+					'fill_mode': 'nearest',
+					'horizontal_flip': True,
+					'vertical_flip': True,
+					'rescale': 1./255
+				}
+			},
 			hyper_params={
 				'batch': 16,
 				'epochs': 10,
@@ -688,7 +790,7 @@ def main():
 				'model_output_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model',
 				'model_name': 'shanynet',
 				'load_model_embeddings': False,  # strip dropouts and fc layers
-				'enable_saving': True,
+				'enable_saving': False,
 				'save_model': True,
 				'save_weights': True,
 				'save_history': True,
@@ -702,7 +804,7 @@ def main():
 	# Net.simple().compile().train().evaluate().infer()
 
 	# create a vgg16 instance
-	# net.vgg16().compile().train().evaluate()
+	net.vgg16().compile().train().evaluate()
 
 	#  create a resnet18 instance
 	# net.resnet18().compile().train().evaluate()
@@ -725,7 +827,7 @@ def main():
 
 	# use the code below to load model, create history (optional) and infer (test) your files
 	cfg.threads = 1  # better to use 1 thread, but you can change it.
-	res = net.load_model().export_to_tf()#.plot_history().infer()
+	res = net.load_model()#.export_to_tf().plot_history().infer()
 	# print(res)  # show embeddings/classification results
 
 main()
