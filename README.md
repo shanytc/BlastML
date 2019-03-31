@@ -67,3 +67,8 @@ BlastML makes it so easy to use, that all you need is to:
 2. load model from disk to memory
 3. [optional] plot history to /model folder (creates 2 images for loss and accuracy)
 4. infer the data-set (get embeddings/classification results)
+
+#### Other Features
+1. Augmentation Support in training / validation
+2. Export model to TensorFlow graph
+3. Support for Darknet model conversion to keras (implemented: https://github.com/qqwweee)
