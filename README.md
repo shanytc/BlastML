@@ -68,6 +68,36 @@ BlastML makes it so easy to use, that all you need is to:
 3. [optional] plot history to /model folder (creates 2 images for loss and accuracy)
 4. infer the data-set (get embeddings/classification results)
 
+### Projects
+BlastML let you create a new project which aims to help unite 
+the entire Machine Learning into single folder structure.
+
+#### How to create a new project:
+Note: before doing any training/inferencing on our data, it's best to make sure 
+we collect data before hand. BlastML uses this format:
+
+root/<br/>
+----project/<br/>
+---------dataset/<br/>
+------------Class1<br/>
+----------------File1<br/>
+----------------File2<br/>
+----------------File3<br/>
+----------------<...><br/>
+------------Class2<br/>
+----------------File1<br/>
+----------------File2<br/>
+----------------File3<br/>
+----------------<...><br/>
+
+Once you setup your dataset in that format, and you specified the 
+correct paths in the project configuration settings, you just call 
+<strong>create_project()</strong> method inside your net instance.<br/><br/>
+Bt default, BlastML uses the standard 80:20 train, inference, validation file distribution.
+Once the data has been processed, you can easily train, validate, infer your data with your 
+CNN of your choice.
+
+
 #### Other Features
 1. Augmentation Support in training / validation
 2. Export model to TensorFlow graph
