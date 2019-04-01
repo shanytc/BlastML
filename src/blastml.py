@@ -1121,7 +1121,7 @@ def main():
 			},
 			model={
 				'load_model_embeddings': False,  # strip dropouts and fc layers
-				'enable_saving': False,
+				'enable_saving': True,
 				'save_model': True,
 				'save_weights': True,
 				'save_history': True,
@@ -1181,9 +1181,11 @@ def main():
 				}
 			},
 			darknet={
-				'cfg': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model/yolov3.cfg',
-				'weights': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model/yolov3.weights',
-				'taining_data': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model/yolov3.weights',
+				'cfg': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.cfg',
+				'weights': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.weights',
+				'training_data': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/data/train.txt',
+				'class_names': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/data/classes.txt',
+				'anchors': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/data/anchors.txt',
 				'enable_saving': True,
 				'save_model': True,
 				'save_weights': True
@@ -1193,7 +1195,7 @@ def main():
 	net = BlastML(cfg=cfg)
 
 	# Create new project from dataset/ folder (contains only classes and their images)
-	net.create_project()
+	# net.create_project()
 
 	#  compile, train and evaluate a simple cnn instance
 	# net.simple().compile().train().evaluate().infer()
@@ -1221,7 +1223,7 @@ def main():
 	# 	.evaluate()
 
 	# convert DarkNet model+weights to Keras model+weights
-	# net.darknet_to_keras()
+	net.darknet_to_keras()
 
 	# load model, create history (optional) and infer (test) your files (/inference)
 	# cfg.threads = 1  # better to use 1 thread, but you can change it.
