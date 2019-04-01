@@ -101,4 +101,4 @@ CNN of your choice.
 #### Other Features
 1. Augmentation Support in training / validation
 2. Export model to TensorFlow graph
-3. Support for Darknet model conversion to keras (implemented: https://github.com/qqwweee)
+3. Support for DarkNet model conversion to keras (implemented: https://github.com/qqwweee)
