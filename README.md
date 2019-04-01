@@ -110,7 +110,7 @@ net.vgg16().compile().train().evaluate()
 BlastML supports DarkNet (YOLO v3) for Object Detections.<br/>
 see: https://github.com/qqwweee/
 
-####Features:
+<strong>Features:</strong>
 1. Converting DarkNet weights to Keras weights (h5 file)
 2. Training DarkNet (pre-trained YOLO v3 h5) with our own dataset
     1. create model/darknet/data
