@@ -1,5 +1,8 @@
 import os
+from os import listdir, makedirs
+from os.path import isfile, join
 import io
+from termcolor import colored
 import shutil
 import configparser
 from collections import defaultdict
@@ -83,10 +86,23 @@ def pil_loader(path):
 
 
 class CFG:
-	def __init__(self, image={}, augmentation={}, hyper_params={}, multithreading={}, dataset={}, model={}, darknet={}):
+	def __init__(self, project={}, image={}, augmentation={}, hyper_params={}, multithreading={}, model={}, darknet={}):
+		# Project settings
+		self.project_name = project['project_name']
+		self.project_root_path = project['root']
+		self.project_folder_path = self.project_root_path + project['project_folder']
+		self.project_dataset_path = self.project_folder_path + project['dataset']
+		self.project_train_path = self.project_folder_path + project['train']
+		self.project_inference_path = self.project_folder_path + project['inference']
+		self.project_validation_path = self.project_folder_path + project['validation']
+		self.project_model_path = self.project_folder_path + project['model']
+
+		# CNN Image input settings
 		self.input_image_width = image['width'],
 		self.input_image_height = image['height'],
 		self.input_image_channels = image['channels'],
+
+		# CNN HyperParams settings
 		self.batch = hyper_params['batch']
 		self.epochs = hyper_params['epochs']
 		self.optimizer = hyper_params['optimizer']
@@ -95,13 +111,13 @@ class CFG:
 		self.class_mode = hyper_params['class_mode']
 		self.compile_metrics = hyper_params['compile_metrics']
 		self.shuffle_training = hyper_params['shuffle']
+
+		# Multithreading (Training) settings
 		self.enable_multithreading = multithreading['enable_multithreading']
 		self.threads = multithreading['threads']
-		self.train_path = dataset['train_path']
-		self.validation_path = dataset['validation_path']
-		self.infer_path = dataset['infer_path']
-		self.model_output_path = model['model_output_path']
-		self.model_name = model['model_name']
+
+		# Model settings
+		self.model_name = self.project_name
 		self.save_model = model['save_model']
 		self.save_weights = model['save_weights']
 		self.save_history = model['save_history']
@@ -109,12 +125,41 @@ class CFG:
 		self.reset_learn_phase = model['reset_learn_phase']
 		self.load_model_embeddings = model['load_model_embeddings']
 		self.save_bottleneck_features = model['save_bottleneck_features']
+
+		# Augmentation settings (Training)
 		self.augmentation = augmentation
+
+		# DarkNet settings (Object Detection)
 		self.darknet_enable_saving = darknet['enable_saving']
 		self.darknet_cfg = darknet['cfg']
 		self.darknet_weights = darknet['weights']
 		self.darknet_save_model = darknet['save_model']
 		self.darknet_save_weight = darknet['save_weights']
+		self.darknet_taining_data = darknet['taining_data']
+
+	def get_project_name(self):
+		return self.project_name
+
+	def get_project_root_path(self):
+		return self.project_root_path
+
+	def get_project_folder_path(self):
+		return self.project_folder_path
+
+	def get_project_dataset_path(self):
+		return self.project_dataset_path
+
+	def get_project_train_path(self):
+		return self.project_train_path
+
+	def get_project_inference_path(self):
+		return self.project_inference_path
+
+	def get_project_validation_path(self):
+		return self.project_validation_path
+
+	def get_project_model_path(self):
+		return self.project_model_path
 
 	def is_augmentation_enagled(self):
 		return self.is_augment_enabled
@@ -140,10 +185,10 @@ class CFG:
 		return self.model_name
 
 	def get_model_output_path(self):
-		if self.model_output_path[-1] == '/':
-			return self.model_output_path
+		if self.project_model_path[-1] == '/':
+			return self.project_model_path
 
-		return self.model_output_path + '/'
+		return self.project_model_path + '/'
 
 	def get_should_save_history(self):
 		return self.save_history
@@ -158,13 +203,13 @@ class CFG:
 		return self.save_bottleneck_features
 
 	def get_train_path(self):
-		return self.train_path
+		return self.project_train_path
 
 	def get_validation_path(self):
-		return self.validation_path
+		return self.project_validation_path
 
 	def get_infer_path(self):
-		return self.infer_path
+		return self.project_inference_path
 
 	def get_num_epochs(self):
 		return self.epochs
@@ -210,6 +255,9 @@ class CFG:
 
 	def get_should_save_darknet_model(self):
 		return self.darknet_save_model
+
+	def get_darknet_training(self):
+		return self.darknet_taining_data
 
 class BlastML:
 	def __init__(self, cfg=None):
@@ -933,7 +981,7 @@ class BlastML:
 		filenames = infer_generator.filenames
 		steps = infer_generator.n/infer_generator.batch_size
 
-		print("Infering folder(s)...")
+		print("Inferencing folder(s)...")
 		infer_generator.reset()
 		embeddings = self.model.predict_generator(infer_generator, steps=steps, use_multiprocessing=self.config.get_multithreading_status(), workers=self.config.get_num_threads(), verbose=1)
 
@@ -951,11 +999,55 @@ class BlastML:
 
 		return data
 
+	def create_project(self):
+		def remove_folder(folder = None):
+			if folder is None:
+				return
+
+			shutil.rmtree(folder)
+
+		def create_folder(folder = None):
+			if folder is None:
+				return
+
+			if not os.path.exists(folder):
+				os.makedirs(folder)
+
+		def generate_data(folder_path=None, output=None, percent=0.8):
+			folders = [f for f in listdir(folder_path) if not isfile(join(folder_path, f))]
+
+			for folder in folders:
+				print(colored('Preparing '+folder_path+'', 'white') + " -> " + colored(output, 'green'))
+				files = [f for f in listdir(folder_path + folder) if isfile(join(folder_path + folder, f))]
+
+				total_files = len(files)
+				total = round(total_files * percent)
+				files = files[:total]
+
+				for file in files:
+					print(colored('Moving', 'blue') + " -> " + colored(file, 'red'))
+					create_folder(output + folder + "/")
+					src = folder_path + folder + "/" + file
+					dest = output + folder + "/" + file
+					shutil.move(src, dest)
+
+		create_folder(self.config.get_project_train_path())
+		create_folder(self.config.get_project_inference_path())
+		create_folder(self.config.get_project_validation_path())
+		create_folder(self.config.get_project_model_path())
+		generate_data(self.config.get_project_dataset_path(), self.config.get_project_train_path(), 0.8)    # generate train data from dataset source with 80% files
+		generate_data(self.config.get_project_dataset_path(), self.config.get_project_inference_path(), 1)  # generate inference data from dataset source, keep 100%
+		generate_data(self.config.get_project_train_path(), self.config.get_project_validation_path(), 0.2) # generate validation data from train source with 20% files
+		remove_folder(self.config.get_project_dataset_path())
+
+		print("Project created successfully.")
+		return self
+
 	def plot_history(self):
 		if self.history is None:
 			return self
 
-		print("Ploting history to images...")
+		print("Plotting history to images...")
 
 		# summarize history for accuracy
 		fig, ax = plt.subplots()
@@ -1010,12 +1102,45 @@ class BlastML:
 
 
 def main():
-	# Create a configuration settings for BlastML
+	# Configurations for BlastML
 	cfg = CFG(
+			project={
+				'project_name': 'shanynet.darknet',
+				'root': '/ib/junk/junk/shany_ds/shany_proj/',
+				'project_folder': 'final_project/',
+				'dataset': 'dataset/',
+				'train': 'train/',
+				'inference': 'inference/',
+				'validation': 'validation/',
+				'model': 'model/',
+			},
 			image={
 				'width': 224,
 				'height': 224,
 				'channels': 3
+			},
+			model={
+				'load_model_embeddings': False,  # strip dropouts and fc layers
+				'enable_saving': False,
+				'save_model': True,
+				'save_weights': True,
+				'save_history': True,
+				'save_bottleneck_features': True,
+				'reset_learn_phase': True
+			},
+			hyper_params={
+				'batch': 16,
+				'epochs': 1,
+				'classes': 5,
+				'class_mode': 'sparse',
+				'shuffle': False,
+				'optimizer': 'adam',
+				'loss_function': 'sparse_categorical_crossentropy',
+				'compile_metrics': ['accuracy']
+			},
+			multithreading={
+				'enable_multithreading': True,
+				'threads': 5
 			},
 			augmentation={
 				'train': {
@@ -1055,39 +1180,10 @@ def main():
 					'rescale': 1./255
 				}
 			},
-			hyper_params={
-				'batch': 16,
-				'epochs': 1,
-				'classes': 5,
-				'class_mode': 'sparse',
-				'shuffle': False,
-				'optimizer': 'adam',
-				'loss_function': 'sparse_categorical_crossentropy',
-				'compile_metrics': ['accuracy']
-			},
-			multithreading={
-				'enable_multithreading': True,
-				'threads': 5
-			},
-			dataset={
-				'train_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/train',
-				'validation_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/validation',
-				'infer_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/inference',
-			},
-			model={
-				'model_output_path': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model',
-				'model_name': 'shanynet',
-				'load_model_embeddings': False,  # strip dropouts and fc layers
-				'enable_saving': False,
-				'save_model': True,
-				'save_weights': True,
-				'save_history': True,
-				'save_bottleneck_features': True,
-				'reset_learn_phase': True
-			},
 			darknet={
 				'cfg': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model/yolov3.cfg',
 				'weights': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model/yolov3.weights',
+				'taining_data': '/ib/junk/junk/shany_ds/shany_proj/dataset_final_project/model/yolov3.weights',
 				'enable_saving': True,
 				'save_model': True,
 				'save_weights': True
@@ -1095,6 +1191,9 @@ def main():
 
 	# Create a BlastML instance
 	net = BlastML(cfg=cfg)
+
+	# Create new project from dataset/ folder (contains only classes and their images)
+	net.create_project()
 
 	#  compile, train and evaluate a simple cnn instance
 	# net.simple().compile().train().evaluate().infer()
@@ -1121,8 +1220,8 @@ def main():
 	# 	.train()\
 	# 	.evaluate()
 
-	# convert darknet to keras
-	net.darknet_to_keras()
+	# convert DarkNet model+weights to Keras model+weights
+	# net.darknet_to_keras()
 
 	# load model, create history (optional) and infer (test) your files (/inference)
 	# cfg.threads = 1  # better to use 1 thread, but you can change it.
