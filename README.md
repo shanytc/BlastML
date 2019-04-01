@@ -4,6 +4,35 @@ BlastML is a Lightning Fast Machine Learning Prototyping Library
 With BlastML, you can prototype CNN networks (NLP to be added in the future) with ease.
 BlastML uses Keras (TFlow) as an underline library, but it makes it much more easier than Keras itself.
 
+### Projects
+BlastML let you create a new project which aims to help unite 
+the entire Machine Learning into single folder structure.
+
+#### How to create a new project:
+_Note_: before doing any training/inferencing on our data, it's best to make sure 
+we collect data before hand. BlastML uses this dataset format:
+
+root/<br/>
+----project/<br/>
+---------dataset/<br/>
+------------Class1<br/>
+----------------File1<br/>
+----------------File2<br/>
+----------------File3<br/>
+----------------<...><br/>
+------------Class2<br/>
+----------------File1<br/>
+----------------File2<br/>
+----------------File3<br/>
+----------------<...><br/>
+
+Once you setup your dataset in that format, and you specified the 
+correct paths in the project configuration settings, you just call 
+<strong>create_project()</strong> method inside your net instance.<br/><br/>
+Bt default, BlastML uses the standard 80:20 train, inference, validation file distribution.
+Once the data has been processed, you can easily train, validate, infer your data with your 
+CNN of your choice.
+
 ### CNN 
 BlastML contains implementations of various well known and tested CNN such as:
 1. Simple (Basic CNN)
@@ -56,11 +85,12 @@ BlastML makes it so easy to use, that all you need is to:
         1. save model
         2. save weights
         3. save history
-3. create a BlastML(CFG) instance (attach configuration to BlastML)
-4. attach a CNN to BlastML.
-5. compile the CNN.
-6. train (get accuracy+loss for your model + validation accuracy+loss).
-7. evaluate (see how your model evaluated against never seen data).
+    11. select your augmentation params
+3. Create a BlastML(CFG) instance (attach configuration to BlastML)
+4. Attach a CNN to BlastML.
+5. Compile the CNN.
+6. Train (get accuracy+loss for your model + validation accuracy+loss).
+7. Evaluate (see how your model evaluated against never seen data).
 
 ##### Inferencing and Plotting Results
 1. set number of threads to 1 (makes sure threads don't overlap your data-set)
@@ -68,37 +98,7 @@ BlastML makes it so easy to use, that all you need is to:
 3. [optional] plot history to /model folder (creates 2 images for loss and accuracy)
 4. infer the data-set (get embeddings/classification results)
 
-### Projects
-BlastML let you create a new project which aims to help unite 
-the entire Machine Learning into single folder structure.
-
-#### How to create a new project:
-Note: before doing any training/inferencing on our data, it's best to make sure 
-we collect data before hand. BlastML uses this format:
-
-root/<br/>
-----project/<br/>
----------dataset/<br/>
-------------Class1<br/>
-----------------File1<br/>
-----------------File2<br/>
-----------------File3<br/>
-----------------<...><br/>
-------------Class2<br/>
-----------------File1<br/>
-----------------File2<br/>
-----------------File3<br/>
-----------------<...><br/>
-
-Once you setup your dataset in that format, and you specified the 
-correct paths in the project configuration settings, you just call 
-<strong>create_project()</strong> method inside your net instance.<br/><br/>
-Bt default, BlastML uses the standard 80:20 train, inference, validation file distribution.
-Once the data has been processed, you can easily train, validate, infer your data with your 
-CNN of your choice.
-
 
 #### Other Features
-1. Augmentation Support in training / validation
 2. Export model to TensorFlow graph
-3. Support for DarkNet model conversion to keras (implemented: https://github.com/qqwweee)
+3. Support for DarkNet model conversion to Keras (implemented: https://github.com/qqwweee)
