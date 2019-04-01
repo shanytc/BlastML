@@ -112,7 +112,7 @@ see: https://github.com/qqwweee/
 
 <strong>Features:</strong>
 1. Converting DarkNet weights to Keras weights (h5 file)
-2. Training DarkNet (pre-trained YOLO v3 h5) with our own dataset
+2. Training DarkNet with our own dataset (using YOLO v3 pre-trained and converted weights to h5)
     1. create model/darknet/data
         1. put anchors.txt
         1. put classes.txt
