@@ -122,7 +122,7 @@ _Note_: the training part is done in 2 stages:
 1. 1-50 epochs with freezed 42/44 layers
 2. 51-100 with un-freezed layers.
 
-i have uploaded a demo (zipped) darknet/ folder, get it here:
+I have uploaded a demo (zipped) darknet/ folder, get it here:
 [here](https://www.dropbox.com/s/a9l2nxsubq601wg/darknet.zip?dl=1)
 
 Training is easy:
