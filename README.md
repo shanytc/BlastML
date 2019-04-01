@@ -11,21 +11,22 @@ the entire Machine Learning into single folder structure.
 #### How to create a new project:
 _Note_: before doing any training/inferencing on our data, it's best to make sure 
 we collect data before hand. BlastML uses this dataset format:
-
-root/<br/>
-----project/<br/>
----------dataset/<br/>
-------------Class1<br/>
-----------------File1<br/>
-----------------File2<br/>
-----------------File3<br/>
-----------------<...><br/>
-------------Class2<br/>
-----------------File1<br/>
-----------------File2<br/>
-----------------File3<br/>
-----------------<...><br/>
-
+```
+root/
+----project/
+---------dataset/
+------------Class1/
+----------------File1
+----------------File2
+----------------File3
+----------------<...>
+------------Class2/
+----------------File1
+----------------File2
+----------------File3
+----------------<...>
+------------<...>
+```
 Once you setup your dataset in that format, and you specified the 
 correct paths in the project configuration settings, you just call 
 <strong>create_project()</strong> method inside your net instance.<br/><br/>
@@ -33,7 +34,7 @@ Bt default, BlastML uses the standard 80:20 train, inference, validation file di
 Once the data has been processed, you can easily train, validate, infer your data with your 
 CNN of your choice.
 
-### CNN 
+### CNN (Convolutional Neural Networks) 
 BlastML contains implementations of various well known and tested CNN such as:
 1. Simple (Basic CNN)
 2. VGG-16
@@ -92,6 +93,12 @@ BlastML makes it so easy to use, that all you need is to:
 6. Train (get accuracy+loss for your model + validation accuracy+loss).
 7. Evaluate (see how your model evaluated against never seen data).
 
+Training is easy:
+```
+net = BlastML(cfg=cfg)
+net.vgg16().compile().train().evaluate()
+```
+
 ##### Inferencing and Plotting Results
 1. set number of threads to 1 (makes sure threads don't overlap your data-set)
 2. load model from disk to memory
@@ -99,6 +106,36 @@ BlastML makes it so easy to use, that all you need is to:
 4. infer the data-set (get embeddings/classification results)
 
 
+### Object Detection
+BlastML supports DarkNet (YOLO v3) for Object Detections.<br/>
+see: https://github.com/qqwweee/
+
+1. Conversion DarkNet weights to Keras weights (h5 file)
+2. Training DarkNet (pre-trained YOLO v3 h5) with our own dataset
+    1. create model/darknet/data
+        1. put anchors.txt
+        1. put classes.txt
+        1. put train.txt
+    2. create model/darknet/data/log/ (for TensorBoard logs results)
+
+_Note_: the training part is done in 2 stages:
+1. 1-50 epochs with freezed 42/44 layers
+2. 51-100 with un-freezed layers.
+
+i have uploaded a demo (zipped) darknet/ folder, get it here:
+[here](https://www.dropbox.com/s/a9l2nxsubq601wg/darknet.zip?dl=1)
+
+Training is easy:
+```
+net = BlastML(cfg=cfg)
+net.darknet().create().compile().train()
+```
+
+After training is completed, 2 .h5 (weights) file will be created
+ 1. 1-50 staged .h5 <**project name>.darknet.trained.stage.h5**)
+ 2. 51-100 trained .h5 (ie: <**project name>.darknet.trained.h5**) 
+
+Next we can inference our videos/images.
+
 #### Other Features
-2. Export model to TensorFlow graph
-3. Support for DarkNet model conversion to Keras (implemented: https://github.com/qqwweee)
+1. BlastML can Export Keras model to TensorFlow graph

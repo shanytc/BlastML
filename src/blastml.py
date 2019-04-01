@@ -964,7 +964,11 @@ class BlastML:
 		self.classes = None
 		self.history = None
 		self.bottleneck = None
-		self.darknet = DarkNet(self.config)
+		self.Darknet = DarkNet(self.config)
+
+	# DarkNet CNN
+	def darknet(self):
+		return self.Darknet
 
 	# ResNet18 CNN
 	def resnet18(self):
@@ -1880,9 +1884,10 @@ def main():
 			darknet={
 				'cfg': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.cfg',
 				'weights': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.weights',
-				'training_data': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/data/train.txt',
-				'class_names': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/data/classes.txt',
-				'anchors': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/data/anchors.txt',
+				'training_data': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/train.txt',
+				'class_names': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/classes.txt',
+				'anchors': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/anchors.txt',
+				'log': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/log',
 				'enable_saving': True,
 				'save_model': True,
 				'save_weights': True
@@ -1922,8 +1927,8 @@ def main():
 	# convert DarkNet model+weights to Keras model+weights
 	# net.darknet_to_keras()
 
-	# train darknet model
-	net.darknet.create().compile().train()
+	# train darknet model with model/data
+	net.darknet().create().compile().train()
 
 	# load model, create history (optional) and infer (test) your files (/inference)
 	# cfg.threads = 1  # better to use 1 thread, but you can change it.
