@@ -89,7 +89,7 @@ def pil_loader(path):
 
 
 class CFG:
-	def __init__(self, project={}, image={}, augmentation={}, hyper_params={}, multithreading={}, model={}, darknet={}):
+	def __init__(self, project={}, image={}, augmentation={}, hyper_params={}, multithreading={}, model={}, object_detection={}):
 		# Project settings
 		self.project_name = project['project_name']
 		self.project_root_path = project['root']
@@ -133,18 +133,18 @@ class CFG:
 		self.augmentation = augmentation
 
 		# DarkNet settings (Object Detection)
-		self.darknet_enable_saving = darknet['enable_saving']
-		self.darknet_cfg = darknet['cfg']
-		self.darknet_weights = darknet['weights']
-		self.darknet_save_model = darknet['save_model']
-		self.darknet_save_weight = darknet['save_weights']
-		self.darknet_training_data = darknet['training_data']
-		self.darknet_classes_data = darknet['class_names']
-		self.darknet_anchors_data = darknet['anchors']
-		self.darknet_infer_score = darknet['score']
-		self.darknet_infer_iou = darknet['iou']
-		self.darknet_input_size = darknet['model_image_size']
-		self.darknet_infer_gpu = darknet['gpu_num']
+		self.darknet_enable_saving = object_detection['yolo']['enable_saving']
+		self.darknet_cfg = object_detection['yolo']['cfg']
+		self.darknet_weights = object_detection['yolo']['weights']
+		self.darknet_save_model = object_detection['yolo']['save_model']
+		self.darknet_save_weight = object_detection['yolo']['save_weights']
+		self.darknet_training_data = object_detection['yolo']['training_data']
+		self.darknet_classes_data = object_detection['yolo']['class_names']
+		self.darknet_anchors_data = object_detection['yolo']['anchors']
+		self.darknet_infer_score = object_detection['yolo']['score']
+		self.darknet_infer_iou = object_detection['yolo']['iou']
+		self.darknet_input_size = object_detection['yolo']['model_image_size']
+		self.darknet_infer_gpu = object_detection['yolo']['gpu_num']
 
 	def get_project_name(self):
 		return self.project_name
@@ -1038,8 +1038,6 @@ class DarkNet:
 			self.model = self.multi_gpu_model(self.model, gpus=self.config.darknet_infer_gpu)
 
 		self.boxes, self.scores, self.classes = self.yolo_eval(self.model.output, anchors, len(class_names), input_image_shape, score_threshold=self.config.darknet_infer_score, iou_threshold=self.config.darknet_infer_iou)
-		###
-
 
 		return self
 
@@ -1973,20 +1971,22 @@ def main():
 					'rescale': 1./255
 				}
 			},
-			darknet={
-				'cfg': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.cfg',
-				'weights': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.weights',
-				'training_data': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/train.txt',
-				'class_names': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/classes.txt',
-				'anchors': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/anchors.txt',
-				'log': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/log',
-				"score": 0.3,
-				"iou": 0.45,
-				"model_image_size": (416, 416),
-				"gpu_num": 1,
-				'enable_saving': True,
-				'save_model': True,
-				'save_weights': True
+			object_detection={
+				'yolo':{
+					'cfg': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.cfg',
+					'weights': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.weights',
+					'training_data': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/train.txt',
+					'class_names': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/classes.txt',
+					'anchors': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/anchors.txt',
+					'log': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/log',
+					"score": 0.3,
+					"iou": 0.45,
+					"model_image_size": (416, 416),
+					"gpu_num": 1,
+					'enable_saving': True,
+					'save_model': True,
+					'save_weights': True
+				}
 			})
 
 	# Create a BlastML instance
