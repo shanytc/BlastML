@@ -6,8 +6,8 @@ from termcolor import colored
 import shutil
 import configparser
 from collections import defaultdict
-from PIL import Image
 import numpy as np
+import tensorflow as tf
 from keras.models import Model
 from keras.models import Sequential, model_from_json
 from keras.layers import UpSampling2D, Concatenate, Add, Input, Dense, Conv2D, MaxPooling2D, Dropout, Flatten, ZeroPadding2D, BatchNormalization, LeakyReLU, AveragePooling2D, Lambda
@@ -16,25 +16,19 @@ from keras.layers.advanced_activations import LeakyReLU
 from keras.regularizers import l2
 from keras.callbacks import History,TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 from keras import backend as K
-import tensorflow as tf
 from keras.optimizers import Adam, RMSprop, SGD
+from keras.utils import multi_gpu_model
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import pickle
 import json
+import requests
 import colorsys
+from urllib.request import urlopen
+from timeit import default_timer as timer
 from functools import reduce
-from PIL import Image
+from PIL import Image, ImageFont, ImageDraw
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
-
-# load image using Pillow
-def pil_loader(path):
-	# open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
-	with open(path, 'rb') as f:
-		img = Image.open(f)
-		img.load()
-		img = img.convert('RGB')
-	return img
 
 #
 # Configurations:
@@ -285,8 +279,11 @@ class DarkNet:
 		self.boxes = None
 		self.scores = None
 		self.classes = None
+		self.infer_anchors = []
+		self.infer_class_names = []
 		self.colors = []
 		self.session = None
+		self.input_image_shape=None
 		self.model = None
 
 	def DarknetConv2D(self, *args, **kwargs):
@@ -462,7 +459,7 @@ class DarkNet:
 	def yolo_eval(self, yolo_outputs, anchors, num_classes, image_shape, max_boxes=20, score_threshold=.6, iou_threshold=.5):
 		# Evaluate YOLO model on given input and return filtered boxes.
 		num_layers = len(yolo_outputs)
-		anchor_mask = [[6,7,8], [3,4,5], [0,1,2]] if num_layers==3 else [[3,4,5], [1,2,3]] # default setting
+		anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]] if num_layers == 3 else [[3, 4, 5], [1, 2, 3]]  # default setting
 		input_shape = K.shape(yolo_outputs[0])[1:3] * 32
 		boxes = []
 		box_scores = []
@@ -687,8 +684,8 @@ class DarkNet:
 		nw = int(iw*scale)
 		nh = int(ih*scale)
 
-		image = image.resize((nw,nh), Image.BICUBIC)
-		new_image = Image.new('RGB', size, (128,128,128))
+		image = image.resize((nw, nh), Image.BICUBIC)
+		new_image = Image.new('RGB', size, (128, 128, 128))
 		new_image.paste(image, ((w-nw)//2, (h-nh)//2))
 		return new_image
 
@@ -853,7 +850,7 @@ class DarkNet:
 				for i in range(num): model_body.layers[i].trainable = False
 				print('Freeze the first {} layers of total {} layers.'.format(num, len(model_body.layers)))
 
-		model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})([*model_body.output, *y_true])
+		model_loss = Lambda(self.yolo_loss, output_shape=(1,), name='yolo_loss',arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})([*model_body.output, *y_true])
 		model = Model([model_body.input, *y_true], model_loss)
 
 		return model
@@ -999,18 +996,17 @@ class DarkNet:
 			anchors = [float(x) for x in anchors.split(',')]
 			return np.array(anchors).reshape(-1, 2)
 
-		class_names = _get_class(self.classes_path)
-		anchors = _get_anchors(self.anchors_path)
+		self.infer_class_names = _get_class(self.classes_path)
+		self.infer_anchors = _get_anchors(self.anchors_path)
 		self.session = K.get_session()
 
-		###
-		model_path = os.path.expanduser(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
+		model_path = os.path.expanduser(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.h5")
 		assert model_path.endswith('.h5'), 'Keras model or weights must be a .h5 file.'
 
 		# Load model, or construct model and load weights.
-		num_anchors = len(anchors)
-		num_classes = len(class_names)
-		is_tiny_version = num_anchors == 6 # default setting
+		num_anchors = len(self.infer_anchors)
+		num_classes = len(self.infer_class_names)
+		is_tiny_version = num_anchors == 6  # default setting
 
 		try:
 			self.model = self.load_model(model_path, compile=False)
@@ -1023,7 +1019,7 @@ class DarkNet:
 		print('{} model, anchors, and classes loaded.'.format(model_path))
 
 		# Generate colors for drawing bounding boxes.
-		hsv_tuples = [(x / len(class_names), 1., 1.) for x in range(len(class_names))]
+		hsv_tuples = [(x / len(self.infer_class_names), 1., 1.) for x in range(len(self.infer_class_names))]
 		self.colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
 		self.colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), self.colors))
 
@@ -1032,14 +1028,104 @@ class DarkNet:
 		np.random.seed(None)  # Reset seed to default.
 
 		# Generate output tensor targets for filtered bounding boxes.
-		input_image_shape = K.placeholder(shape=(2, ))
+		self.input_image_shape = K.placeholder(shape=(2, ))
 
 		if self.config.darknet_infer_gpu >= 2:
-			self.model = self.multi_gpu_model(self.model, gpus=self.config.darknet_infer_gpu)
+			self.model = multi_gpu_model(self.model, gpus=self.config.darknet_infer_gpu)
 
-		self.boxes, self.scores, self.classes = self.yolo_eval(self.model.output, anchors, len(class_names), input_image_shape, score_threshold=self.config.darknet_infer_score, iou_threshold=self.config.darknet_infer_iou)
+		self.boxes, self.scores, self.classes = self.yolo_eval(self.model.output, self.infer_anchors, len(self.infer_class_names), self.input_image_shape, score_threshold=self.config.darknet_infer_score, iou_threshold=self.config.darknet_infer_iou)
 
 		return self
+
+	def infer(self):
+		# load image using Pillow
+		def img_loader(path):
+			with open(path, 'rb') as f:
+				img = Image.open(f)
+				#img.load()
+				#img = img.convert('RGB')
+			return img
+
+		def img_loader_from_url(url):
+			img = Image.open(urlopen(url))
+			#img.load()
+			#img = img.convert('RGB')
+			return img
+
+		# image_path = '/ib/junk/junk/shany_ds/shany_proj/final_project/inference/terrorists/terrorists00030.jpg'
+		# image = img_loader(image_path)
+
+		image_path = 'https://dsvf96nw4ftce.cloudfront.net/images/thumbnails/460/460/detailed/2/dog-bike-tow-leash-action2.jpg?t=1527115978'
+		image = img_loader_from_url(image_path)
+
+		if self.config.darknet_input_size != (None, None):
+			assert self.config.darknet_input_size[0] % 32 == 0, 'Multiples of 32 required'
+			assert self.config.darknet_input_size[1] % 32 == 0, 'Multiples of 32 required'
+			boxed_image = self.letterbox_image(image, tuple(reversed(self.config.darknet_input_size)))
+		else:
+			new_image_size = (image.width - (image.width % 32), image.height - (image.height % 32))
+			boxed_image = self.letterbox_image(image, new_image_size)
+		image_data = np.array(boxed_image, dtype='float32')
+
+		image_data /= 255.
+		image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+
+		start = timer()
+
+		out_boxes, out_scores, out_classes = self.session.run(
+			[self.boxes, self.scores, self.classes],
+			feed_dict={
+				self.model.input: image_data,
+				self.input_image_shape: [image.size[1], image.size[0]],
+				K.learning_phase(): 0
+			})
+
+		end = timer()
+
+		print(end - start)
+		print('Found {} boxes for {}'.format(len(out_boxes), image_path))
+
+		# font = ImageFont.truetype(font='font/FiraMono-Medium.otf', size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
+		# thickness = (image.size[0] + image.size[1]) // 300
+		#
+		# for i, c in reversed(list(enumerate(out_classes))):
+		# 	predicted_class = self.class_names[c]
+		# 	box = out_boxes[i]
+		# 	score = out_scores[i]
+		#
+		# 	label = '{} {:.2f}'.format(predicted_class, score)
+		# 	draw = ImageDraw.Draw(image)
+		# 	label_size = draw.textsize(label, font)
+		#
+		# 	top, left, bottom, right = box
+		# 	top = max(0, np.floor(top + 0.5).astype('int32'))
+		# 	left = max(0, np.floor(left + 0.5).astype('int32'))
+		# 	bottom = min(image.size[1], np.floor(bottom + 0.5).astype('int32'))
+		# 	right = min(image.size[0], np.floor(right + 0.5).astype('int32'))
+		# 	print(label, (left, top), (right, bottom))
+		#
+		# 	if top - label_size[1] >= 0:
+		# 		text_origin = np.array([left, top - label_size[1]])
+		# 	else:
+		# 		text_origin = np.array([left, top + 1])
+		#
+		# 	# My kingdom for a good redistributable image drawing library.
+		# 	for i in range(thickness):
+		# 		draw.rectangle(
+		# 			[left + i, top + i, right - i, bottom - i],
+		# 			outline=self.colors[c])
+		# 	draw.rectangle(
+		# 		[tuple(text_origin), tuple(text_origin + label_size)],
+		# 		fill=self.colors[c])
+		# 	draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+		# 	del draw
+		#
+		# end = timer()
+		# print(end - start)
+		#
+		# #return image
+
+		return out_boxes
 
 	def export_to_keras(self):
 		# test darknet files exists
@@ -1973,7 +2059,7 @@ def main():
 			},
 			object_detection={
 				'yolo':{
-					'cfg': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.cfg',
+					'cfg': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3-1c.cfg',
 					'weights': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.weights',
 					'training_data': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/train.txt',
 					'class_names': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/classes.txt',
@@ -2024,8 +2110,8 @@ def main():
 	# net.darknet().export_to_keras()
 
 	# train yolo model using darknet with model/data
-	# net.yolo().create().compile().train()
-	net.yolo().load_model()
+	net.yolo().create().compile().train()
+	# net.yolo().load_model().infer()
 
 	# load model, create history (optional) and infer (test) your files (/inference)
 	# cfg.threads = 1  # better to use 1 thread, but you can change it.
