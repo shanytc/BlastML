@@ -8,6 +8,7 @@ import configparser
 from collections import defaultdict
 import numpy as np
 import tensorflow as tf
+from keras.models import load_model
 from keras.models import Model
 from keras.models import Sequential, model_from_json
 from keras.layers import UpSampling2D, Concatenate, Add, Input, Dense, Conv2D, MaxPooling2D, Dropout, Flatten, ZeroPadding2D, BatchNormalization, LeakyReLU, AveragePooling2D, Lambda
@@ -663,7 +664,7 @@ class DarkNet:
 			class_loss = K.sum(class_loss) / mf
 			loss += xy_loss + wh_loss + confidence_loss + class_loss
 			if print_loss:
-				loss = tf.Print(loss, [loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask)], message='loss: ')
+				loss = tf.Print(loss, [loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask)], message='yolo loss: ')
 		return loss
 
 	def compose(self, *funcs):
@@ -850,7 +851,7 @@ class DarkNet:
 				for i in range(num): model_body.layers[i].trainable = False
 				print('Freeze the first {} layers of total {} layers.'.format(num, len(model_body.layers)))
 
-		model_loss = Lambda(self.yolo_loss, output_shape=(1,), name='yolo_loss',arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})([*model_body.output, *y_true])
+		model_loss = Lambda(self.yolo_loss, output_shape=(1,), name='yolo_loss', arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})([*model_body.output, *y_true])
 		model = Model([model_body.input, *y_true], model_loss)
 
 		return model
@@ -876,7 +877,7 @@ class DarkNet:
 				for i in range(num): model_body.layers[i].trainable = False
 				print('Freeze the first {} layers of total {} layers.'.format(num, len(model_body.layers)))
 
-		model_loss = Lambda(self.yolo_loss, output_shape=(1,), name='yolo_loss',arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.7})([*model_body.output, *y_true])
+		model_loss = Lambda(self.yolo_loss, output_shape=(1,), name='yolo_loss', arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.7})([*model_body.output, *y_true])
 		model = Model([model_body.input, *y_true], model_loss)
 
 		return model
@@ -950,7 +951,7 @@ class DarkNet:
 			steps_per_epoch=max(1, num_train//batch_size),
 			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
 			validation_steps=max(1, num_val//batch_size),
-			epochs=50,
+			epochs=5,
 			initial_epoch=0,
 			callbacks=[logging, checkpoint])
 
@@ -973,8 +974,8 @@ class DarkNet:
 			steps_per_epoch=max(1, num_train//batch_size),
 			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
 			validation_steps=max(1, num_val//batch_size),
-			epochs=100,
-			initial_epoch=50,
+			epochs=7,
+			initial_epoch=5,
 			callbacks=[logging, checkpoint, reduce_lr, early_stopping])
 
 		self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
@@ -1000,7 +1001,7 @@ class DarkNet:
 		self.infer_anchors = _get_anchors(self.anchors_path)
 		self.session = K.get_session()
 
-		model_path = os.path.expanduser(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.h5")
+		model_path = os.path.expanduser(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
 		assert model_path.endswith('.h5'), 'Keras model or weights must be a .h5 file.'
 
 		# Load model, or construct model and load weights.
@@ -1009,7 +1010,7 @@ class DarkNet:
 		is_tiny_version = num_anchors == 6  # default setting
 
 		try:
-			self.model = self.load_model(model_path, compile=False)
+			self.model = load_model(model_path, compile=False)
 		except:
 			self.model = self.tiny_yolo_body(Input(shape=(None, None, 3)), num_anchors//2, num_classes) if is_tiny_version else self.yolo_body(Input(shape=(None, None, 3)), num_anchors//3, num_classes)
 			self.model.load_weights(model_path)  # make sure model, anchors and classes match
@@ -1042,8 +1043,8 @@ class DarkNet:
 		def img_loader(path):
 			with open(path, 'rb') as f:
 				img = Image.open(f)
-				#img.load()
-				#img = img.convert('RGB')
+				img.load()
+				img = img.convert('RGB')
 			return img
 
 		def img_loader_from_url(url):
@@ -1052,38 +1053,41 @@ class DarkNet:
 			#img = img.convert('RGB')
 			return img
 
-		# image_path = '/ib/junk/junk/shany_ds/shany_proj/final_project/inference/terrorists/terrorists00030.jpg'
-		# image = img_loader(image_path)
-
 		image_path = 'https://dsvf96nw4ftce.cloudfront.net/images/thumbnails/460/460/detailed/2/dog-bike-tow-leash-action2.jpg?t=1527115978'
 		image = img_loader_from_url(image_path)
 
-		if self.config.darknet_input_size != (None, None):
-			assert self.config.darknet_input_size[0] % 32 == 0, 'Multiples of 32 required'
-			assert self.config.darknet_input_size[1] % 32 == 0, 'Multiples of 32 required'
-			boxed_image = self.letterbox_image(image, tuple(reversed(self.config.darknet_input_size)))
-		else:
-			new_image_size = (image.width - (image.width % 32), image.height - (image.height % 32))
-			boxed_image = self.letterbox_image(image, new_image_size)
-		image_data = np.array(boxed_image, dtype='float32')
+		# try to find boxes in inference/ folder
+		files = [f for f in listdir(self.config.get_infer_path() + 'terrorists/') if isfile(join(self.config.get_infer_path() + 'terrorists/', f))]
+		for f in files:
+			image_path = self.config.get_infer_path() + 'terrorists/' + f
+			image = img_loader(image_path)
 
-		image_data /= 255.
-		image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+			if self.config.darknet_input_size != (None, None):
+				assert self.config.darknet_input_size[0] % 32 == 0, 'Multiples of 32 required'
+				assert self.config.darknet_input_size[1] % 32 == 0, 'Multiples of 32 required'
+				boxed_image = self.letterbox_image(image, tuple(reversed(self.config.darknet_input_size)))
+			else:
+				new_image_size = (image.width - (image.width % 32), image.height - (image.height % 32))
+				boxed_image = self.letterbox_image(image, new_image_size)
+			image_data = np.array(boxed_image, dtype='float32')
 
-		start = timer()
+			image_data /= 255.
+			image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
 
-		out_boxes, out_scores, out_classes = self.session.run(
-			[self.boxes, self.scores, self.classes],
-			feed_dict={
-				self.model.input: image_data,
-				self.input_image_shape: [image.size[1], image.size[0]],
-				K.learning_phase(): 0
-			})
+			start = timer()
 
-		end = timer()
+			out_boxes, out_scores, out_classes = self.session.run(
+				[self.boxes, self.scores, self.classes],
+				feed_dict={
+					self.model.input: image_data,
+					self.input_image_shape: [image.size[1], image.size[0]],
+					K.learning_phase(): 0
+				})
 
-		print(end - start)
-		print('Found {} boxes for {}'.format(len(out_boxes), image_path))
+			end = timer()
+
+			# print(end - start)
+			print("Boxes:" + str(len(out_boxes)) + " - " + f)
 
 		# font = ImageFont.truetype(font='font/FiraMono-Medium.otf', size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
 		# thickness = (image.size[0] + image.size[1]) // 300
@@ -2006,7 +2010,7 @@ def main():
 				'reset_learn_phase': True
 			},
 			hyper_params={
-				'batch': 16,
+				'batch': 32,
 				'epochs': 1,
 				'classes': 5,
 				'class_mode': 'sparse',
@@ -2119,3 +2123,5 @@ def main():
 	# print(res)  # show embeddings/classification results
 
 main()
+
+# qsub -I -V -N kukk -l nodes=hdb914:gpus=4
