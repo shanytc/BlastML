@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import pickle
 import json
+import colorsys
 from functools import reduce
 from PIL import Image
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
@@ -140,6 +141,10 @@ class CFG:
 		self.darknet_training_data = darknet['training_data']
 		self.darknet_classes_data = darknet['class_names']
 		self.darknet_anchors_data = darknet['anchors']
+		self.darknet_infer_score = darknet['score']
+		self.darknet_infer_iou = darknet['iou']
+		self.darknet_input_size = darknet['model_image_size']
+		self.darknet_infer_gpu = darknet['gpu_num']
 
 	def get_project_name(self):
 		return self.project_name
@@ -277,6 +282,11 @@ class DarkNet:
 		self.class_names = self.get_classes(self.classes_path)
 		self.num_classes = len(self.class_names)
 		self.anchors = self.get_anchors(self.anchors_path)
+		self.boxes = None
+		self.scores = None
+		self.classes = None
+		self.colors = []
+		self.session = None
 		self.model = None
 
 	def DarknetConv2D(self, *args, **kwargs):
@@ -802,7 +812,7 @@ class DarkNet:
 			image_data = []
 			box_data = []
 			for b in range(batch_size):
-				if i==0:
+				if i == 0:
 					np.random.shuffle(annotation_lines)
 				image, box = self.get_random_data(annotation_lines[i], input_shape, random=True)
 				image_data.append(image)
@@ -874,6 +884,24 @@ class DarkNet:
 
 		return model
 
+	def get_training_files(self):
+		training_files = []
+
+		with open(self.config.get_darknet_training()) as f:
+			lines = f.readlines()
+
+		for l in lines:
+			train_file = self.config.get_project_train_path() + l.split(' ')[0]
+			val_file = self.config.get_project_validation_path() + l.split(' ')[0]
+
+			if isfile(train_file) and self.config.get_project_train_path()+l not in training_files:
+				training_files.append(self.config.get_project_train_path() + l.replace("\n", ""))
+			else:
+				if isfile(val_file) and self.config.get_project_validation_path()+l not in training_files:
+					training_files.append(self.config.get_project_validation_path() + l.replace("\n", ""))
+
+		return training_files
+
 	def create(self):
 		self.model = None
 		input_shape = (416, 416)  # multiple of 32, hw
@@ -891,7 +919,7 @@ class DarkNet:
 			return self
 
 		# use custom yolo_loss Lambda layer.
-		self.model.compile(optimizer=Adam(lr=learning_rate), loss={'yolo_loss': lambda y_true, y_pred: y_pred})
+		self.model.compile(optimizer=RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0), metrics=self.config.get_compile_metrics(), loss={'yolo_loss': lambda y_true, y_pred: y_pred})
 
 		return self
 
@@ -900,14 +928,14 @@ class DarkNet:
 			return self
 
 		input_shape = (416, 416)  # multiple of 32, hw
+
 		logging = TensorBoard(log_dir=self.log_dir)
 		checkpoint = ModelCheckpoint(self.log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5', monitor='val_loss', save_weights_only=True, save_best_only=True, period=3)
-		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)
-		early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1)
+		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)  # Reduce learning rate when a metric has stopped improving.
+		early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1)  # Early stop if validation loss is not improving
 
 		val_split = 0.1
-		with open(self.annotation_path) as f:
-			lines = f.readlines()
+		lines = self.get_training_files()  # get training data (combination of train + validation)
 		np.random.seed(10101)
 		np.random.shuffle(lines)
 		np.random.seed(None)
@@ -918,8 +946,9 @@ class DarkNet:
 		# Adjust num epochs to your data set.
 		# This step is enough to obtain a not bad model.
 
-		batch_size = 32
+		batch_size = self.config.get_batch_size()
 		print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
+
 		self.model.fit_generator(self.data_generator_wrapper(lines[:num_train], batch_size, input_shape, self.anchors, self.num_classes),
 			steps_per_epoch=max(1, num_train//batch_size),
 			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
@@ -927,6 +956,7 @@ class DarkNet:
 			epochs=50,
 			initial_epoch=0,
 			callbacks=[logging, checkpoint])
+
 		self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.stage.h5")
 
 		# Unfreeze and continue training, to fine-tune.
@@ -934,12 +964,14 @@ class DarkNet:
 		for i in range(len(self.model.layers)):
 			self.model.layers[i].trainable = True
 
-		# self.model.compile(optimizer=Adam(lr=1-4), loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
-		self.compile(1e-4);
+		# re-compile with smaller learning rate
+		self.compile(1e-4)
+
 		print('Unfreeze all of the layers.')
 
-		batch_size = 32  # note that more GPU memory is required after unfreezing the body
+		batch_size = self.config.get_batch_size()  # note that more GPU memory is required after unfreezing the body
 		print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
+
 		self.model.fit_generator(self.data_generator_wrapper(lines[:num_train], batch_size, input_shape, self.anchors, self.num_classes),
 			steps_per_epoch=max(1, num_train//batch_size),
 			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
@@ -947,7 +979,296 @@ class DarkNet:
 			epochs=100,
 			initial_epoch=50,
 			callbacks=[logging, checkpoint, reduce_lr, early_stopping])
+
 		self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
+
+		return self
+
+	def load_model(self):
+		def _get_class(path):
+			classes_path = os.path.expanduser(path)
+			with open(path) as f:
+				class_names = f.readlines()
+			class_names = [c.strip() for c in class_names]
+			return class_names
+
+		def _get_anchors(path):
+			anchors_path = os.path.expanduser(path)
+			with open(path) as f:
+				anchors = f.readline()
+			anchors = [float(x) for x in anchors.split(',')]
+			return np.array(anchors).reshape(-1, 2)
+
+		class_names = _get_class(self.classes_path)
+		anchors = _get_anchors(self.anchors_path)
+		self.session = K.get_session()
+
+		###
+		model_path = os.path.expanduser(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
+		assert model_path.endswith('.h5'), 'Keras model or weights must be a .h5 file.'
+
+		# Load model, or construct model and load weights.
+		num_anchors = len(anchors)
+		num_classes = len(class_names)
+		is_tiny_version = num_anchors == 6 # default setting
+
+		try:
+			self.model = self.load_model(model_path, compile=False)
+		except:
+			self.model = self.tiny_yolo_body(Input(shape=(None, None, 3)), num_anchors//2, num_classes) if is_tiny_version else self.yolo_body(Input(shape=(None, None, 3)), num_anchors//3, num_classes)
+			self.model.load_weights(model_path)  # make sure model, anchors and classes match
+		else:
+			assert self.model.layers[-1].output_shape[-1] == num_anchors/len(self.model.output) * (num_classes + 5), 'Mismatch between model and given anchor and class sizes'
+
+		print('{} model, anchors, and classes loaded.'.format(model_path))
+
+		# Generate colors for drawing bounding boxes.
+		hsv_tuples = [(x / len(class_names), 1., 1.) for x in range(len(class_names))]
+		self.colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
+		self.colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), self.colors))
+
+		np.random.seed(10101)  # Fixed seed for consistent colors across runs.
+		np.random.shuffle(self.colors)  # Shuffle colors to decorrelate adjacent classes.
+		np.random.seed(None)  # Reset seed to default.
+
+		# Generate output tensor targets for filtered bounding boxes.
+		input_image_shape = K.placeholder(shape=(2, ))
+
+		if self.config.darknet_infer_gpu >= 2:
+			self.model = self.multi_gpu_model(self.model, gpus=self.config.darknet_infer_gpu)
+
+		self.boxes, self.scores, self.classes = self.yolo_eval(self.model.output, anchors, len(class_names), input_image_shape, score_threshold=self.config.darknet_infer_score, iou_threshold=self.config.darknet_infer_iou)
+		###
+
+
+		return self
+
+	def export_to_keras(self):
+		# test darknet files exists
+		if self.config.get_darknet_config() != '' and os.path.isfile(self.config.get_darknet_config()) and self.config.get_darknet_weights() != '' and os.path.isfile(self.config.get_darknet_weights()):
+
+			def unique_config_sections(config_file):
+				#
+				# Convert all config sections to have unique names.
+				# Adds unique suffixes to config sections for compability with configparser.
+				#
+				section_counters = defaultdict(int)
+				output_stream = io.StringIO()
+				with open(config_file) as fin:
+					for line in fin:
+						if line.startswith('['):
+							section = line.strip().strip('[]')
+							_section = section + '_' + str(section_counters[section])
+							section_counters[section] += 1
+							line = line.replace(section, _section)
+						output_stream.write(line)
+				output_stream.seek(0)
+				return output_stream
+
+			print("converting darknet model to keras...")
+
+			print('Loading darknet weights.')
+			weights_file = open(self.config.get_darknet_weights(), 'rb')
+			major, minor, revision = np.ndarray(shape=(3, ), dtype='int32', buffer=weights_file.read(12))
+
+			if (major*10+minor) >= 2 and major < 1000 and minor < 1000:
+				seen = np.ndarray(shape=(1,), dtype='int64', buffer=weights_file.read(8))
+			else:
+				seen = np.ndarray(shape=(1,), dtype='int32', buffer=weights_file.read(4))
+
+			print('Weights Header: ', major, minor, revision, seen)
+
+			print('Parsing Darknet config.')
+			unique_config_file = unique_config_sections(self.config.get_darknet_config())
+			cfg_parser = configparser.ConfigParser()
+			cfg_parser.read_file(unique_config_file)
+
+			print('Creating Keras model.')
+			input_layer = Input(shape=(None, None, 3))
+			prev_layer = input_layer
+			all_layers = []
+
+			weight_decay = float(cfg_parser['net_0']['decay']) if 'net_0' in cfg_parser.sections() else 5e-4
+			count = 0
+			out_index = []
+			for section in cfg_parser.sections():
+				print('Parsing section {}'.format(section))
+				if section.startswith('convolutional'):
+					filters = int(cfg_parser[section]['filters'])
+					size = int(cfg_parser[section]['size'])
+					stride = int(cfg_parser[section]['stride'])
+					pad = int(cfg_parser[section]['pad'])
+					activation = cfg_parser[section]['activation']
+					batch_normalize = 'batch_normalize' in cfg_parser[section]
+
+					padding = 'same' if pad == 1 and stride == 1 else 'valid'
+
+					# Setting weights.
+					# Darknet serializes convolutional weights as:
+					# [bias/beta, [gamma, mean, variance], conv_weights]
+					prev_layer_shape = K.int_shape(prev_layer)
+
+					weights_shape = (size, size, prev_layer_shape[-1], filters)
+					darknet_w_shape = (filters, weights_shape[2], size, size)
+					weights_size = np.product(weights_shape)
+
+					print('conv2d', 'bn'
+					if batch_normalize else '  ', activation, weights_shape)
+
+					conv_bias = np.ndarray(
+						shape=(filters, ),
+						dtype='float32',
+						buffer=weights_file.read(filters * 4))
+					count += filters
+
+					if batch_normalize:
+						bn_weights = np.ndarray(
+							shape=(3, filters),
+							dtype='float32',
+							buffer=weights_file.read(filters * 12))
+						count += 3 * filters
+
+						bn_weight_list = [
+							bn_weights[0],  # scale gamma
+							conv_bias,  # shift beta
+							bn_weights[1],  # running mean
+							bn_weights[2]  # running var
+						]
+
+					conv_weights = np.ndarray(
+						shape=darknet_w_shape,
+						dtype='float32',
+						buffer=weights_file.read(weights_size * 4))
+					count += weights_size
+
+					# DarkNet conv_weights are serialized Caffe-style:
+					# (out_dim, in_dim, height, width)
+					# We would like to set these to Tensorflow order:
+					# (height, width, in_dim, out_dim)
+					conv_weights = np.transpose(conv_weights, [2, 3, 1, 0])
+					conv_weights = [conv_weights] if batch_normalize else [
+						conv_weights, conv_bias
+					]
+
+					# Handle activation.
+					act_fn = None
+					if activation == 'leaky':
+						pass  # Add advanced activation later.
+					elif activation != 'linear':
+						raise ValueError(
+							'Unknown activation function `{}` in section {}'.format(
+								activation, section))
+
+					# Create Conv2D layer
+					if stride>1:
+						# Darknet uses left and top padding instead of 'same' mode
+						prev_layer = ZeroPadding2D(((1,0),(1,0)))(prev_layer)
+					conv_layer = (Conv2D(
+						filters, (size, size),
+						strides=(stride, stride),
+						kernel_regularizer=l2(weight_decay),
+						use_bias=not batch_normalize,
+						weights=conv_weights,
+						activation=act_fn,
+						padding=padding))(prev_layer)
+
+					if batch_normalize:
+						conv_layer = (BatchNormalization(
+							weights=bn_weight_list))(conv_layer)
+					prev_layer = conv_layer
+
+					if activation == 'linear':
+						all_layers.append(prev_layer)
+					elif activation == 'leaky':
+						act_layer = LeakyReLU(alpha=0.1)(prev_layer)
+						prev_layer = act_layer
+						all_layers.append(act_layer)
+
+				elif section.startswith('route'):
+					ids = [int(i) for i in cfg_parser[section]['layers'].split(',')]
+					layers = [all_layers[i] for i in ids]
+					if len(layers) > 1:
+						print('Concatenating route layers:', layers)
+						concatenate_layer = Concatenate()(layers)
+						all_layers.append(concatenate_layer)
+						prev_layer = concatenate_layer
+					else:
+						skip_layer = layers[0]  # only one layer to route
+						all_layers.append(skip_layer)
+						prev_layer = skip_layer
+
+				elif section.startswith('maxpool'):
+					size = int(cfg_parser[section]['size'])
+					stride = int(cfg_parser[section]['stride'])
+					all_layers.append(
+						MaxPooling2D(
+							pool_size=(size, size),
+							strides=(stride, stride),
+							padding='same')(prev_layer))
+					prev_layer = all_layers[-1]
+
+				elif section.startswith('shortcut'):
+					index = int(cfg_parser[section]['from'])
+					activation = cfg_parser[section]['activation']
+					assert activation == 'linear', 'Only linear activation supported.'
+					all_layers.append(Add()([all_layers[index], prev_layer]))
+					prev_layer = all_layers[-1]
+
+				elif section.startswith('upsample'):
+					stride = int(cfg_parser[section]['stride'])
+					assert stride == 2, 'Only stride=2 supported.'
+					all_layers.append(UpSampling2D(stride)(prev_layer))
+					prev_layer = all_layers[-1]
+
+				elif section.startswith('yolo'):
+					out_index.append(len(all_layers)-1)
+					all_layers.append(None)
+					prev_layer = all_layers[-1]
+
+				elif section.startswith('net'):
+					pass
+
+				else:
+					raise ValueError(
+						'Unsupported section header type: {}'.format(section))
+
+			# Create and save model.
+			if len(out_index) == 0:
+				out_index.append(len(all_layers)-1)
+
+			model = Model(inputs=input_layer, outputs=[all_layers[i] for i in out_index])
+			print(model.summary())
+
+			if self.config.is_darknet_saving_enabled():
+				# remove old model when all saving features are enabled
+				if self.config.get_model_name() != '' and self.config.get_should_save_darknet_model() and self.config.get_should_save_darknet_weights():
+					print("Removing old darknet model...")
+					darknet_files = [
+						self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.json",
+						self.config.get_model_output_path() + self.config.get_model_name() + '.darknet.h5'
+					]
+					for darknetfile in darknet_files:
+						try:
+							if os.path.isfile(darknetfile):
+								os.unlink(darknetfile)
+						except Exception as e:
+							print(e)
+
+				if self.config.get_should_save_darknet_model():
+					model_json = model.to_json()
+					with open(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.json", "w") as json_file:
+						json_file.write(model_json)
+
+				if self.config.get_should_save_darknet_weights():
+					model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + '.darknet.h5')
+					print("Model's weights saved to disk.")
+
+				# Check to see if all weights have been read.
+				remaining_weights = len(weights_file.read()) / 4
+				weights_file.close()
+				print('Read {} of {} from Darknet weights.'.format(count, count + remaining_weights))
+				if remaining_weights > 0:
+					print('Warning: {} unused weights'.format(remaining_weights))
 
 		return self
 
@@ -967,7 +1288,7 @@ class BlastML:
 		self.Darknet = DarkNet(self.config)
 
 	# DarkNet CNN
-	def darknet(self):
+	def yolo(self):
 		return self.Darknet
 
 	# ResNet18 CNN
@@ -1198,235 +1519,6 @@ class BlastML:
 		if os.path.isfile(self.config.get_model_output_path() + self.config.get_model_name() + '.history'):
 			with open(self.config.get_model_output_path() + self.config.get_model_name() + '.history', 'rb') as f:
 				self.history = pickle.load(f)
-
-		return self
-
-	def darknet_to_keras(self):
-		# test darknet files exists
-		if self.config.get_darknet_config() != '' and os.path.isfile(self.config.get_darknet_config()) and self.config.get_darknet_weights() != '' and os.path.isfile(self.config.get_darknet_weights()):
-
-			def unique_config_sections(config_file):
-				#
-				# Convert all config sections to have unique names.
-				# Adds unique suffixes to config sections for compability with configparser.
-				#
-				section_counters = defaultdict(int)
-				output_stream = io.StringIO()
-				with open(config_file) as fin:
-					for line in fin:
-						if line.startswith('['):
-							section = line.strip().strip('[]')
-							_section = section + '_' + str(section_counters[section])
-							section_counters[section] += 1
-							line = line.replace(section, _section)
-						output_stream.write(line)
-				output_stream.seek(0)
-				return output_stream
-
-			print("converting darknet model to keras...")
-
-			print('Loading darknet weights.')
-			weights_file = open(self.config.get_darknet_weights(), 'rb')
-			major, minor, revision = np.ndarray(shape=(3, ), dtype='int32', buffer=weights_file.read(12))
-
-			if (major*10+minor) >= 2 and major < 1000 and minor < 1000:
-				seen = np.ndarray(shape=(1,), dtype='int64', buffer=weights_file.read(8))
-			else:
-				seen = np.ndarray(shape=(1,), dtype='int32', buffer=weights_file.read(4))
-
-			print('Weights Header: ', major, minor, revision, seen)
-
-			print('Parsing Darknet config.')
-			unique_config_file = unique_config_sections(self.config.get_darknet_config())
-			cfg_parser = configparser.ConfigParser()
-			cfg_parser.read_file(unique_config_file)
-
-			print('Creating Keras model.')
-			input_layer = Input(shape=(None, None, 3))
-			prev_layer = input_layer
-			all_layers = []
-
-			weight_decay = float(cfg_parser['net_0']['decay']) if 'net_0' in cfg_parser.sections() else 5e-4
-			count = 0
-			out_index = []
-			for section in cfg_parser.sections():
-				print('Parsing section {}'.format(section))
-				if section.startswith('convolutional'):
-					filters = int(cfg_parser[section]['filters'])
-					size = int(cfg_parser[section]['size'])
-					stride = int(cfg_parser[section]['stride'])
-					pad = int(cfg_parser[section]['pad'])
-					activation = cfg_parser[section]['activation']
-					batch_normalize = 'batch_normalize' in cfg_parser[section]
-
-					padding = 'same' if pad == 1 and stride == 1 else 'valid'
-
-					# Setting weights.
-					# Darknet serializes convolutional weights as:
-					# [bias/beta, [gamma, mean, variance], conv_weights]
-					prev_layer_shape = K.int_shape(prev_layer)
-
-					weights_shape = (size, size, prev_layer_shape[-1], filters)
-					darknet_w_shape = (filters, weights_shape[2], size, size)
-					weights_size = np.product(weights_shape)
-
-					print('conv2d', 'bn'
-					if batch_normalize else '  ', activation, weights_shape)
-
-					conv_bias = np.ndarray(
-						shape=(filters, ),
-						dtype='float32',
-						buffer=weights_file.read(filters * 4))
-					count += filters
-
-					if batch_normalize:
-						bn_weights = np.ndarray(
-							shape=(3, filters),
-							dtype='float32',
-							buffer=weights_file.read(filters * 12))
-						count += 3 * filters
-
-						bn_weight_list = [
-							bn_weights[0],  # scale gamma
-							conv_bias,  # shift beta
-							bn_weights[1],  # running mean
-							bn_weights[2]  # running var
-						]
-
-					conv_weights = np.ndarray(
-						shape=darknet_w_shape,
-						dtype='float32',
-						buffer=weights_file.read(weights_size * 4))
-					count += weights_size
-
-					# DarkNet conv_weights are serialized Caffe-style:
-					# (out_dim, in_dim, height, width)
-					# We would like to set these to Tensorflow order:
-					# (height, width, in_dim, out_dim)
-					conv_weights = np.transpose(conv_weights, [2, 3, 1, 0])
-					conv_weights = [conv_weights] if batch_normalize else [
-						conv_weights, conv_bias
-					]
-
-					# Handle activation.
-					act_fn = None
-					if activation == 'leaky':
-						pass  # Add advanced activation later.
-					elif activation != 'linear':
-						raise ValueError(
-							'Unknown activation function `{}` in section {}'.format(
-								activation, section))
-
-					# Create Conv2D layer
-					if stride>1:
-						# Darknet uses left and top padding instead of 'same' mode
-						prev_layer = ZeroPadding2D(((1,0),(1,0)))(prev_layer)
-					conv_layer = (Conv2D(
-						filters, (size, size),
-						strides=(stride, stride),
-						kernel_regularizer=l2(weight_decay),
-						use_bias=not batch_normalize,
-						weights=conv_weights,
-						activation=act_fn,
-						padding=padding))(prev_layer)
-
-					if batch_normalize:
-						conv_layer = (BatchNormalization(
-							weights=bn_weight_list))(conv_layer)
-					prev_layer = conv_layer
-
-					if activation == 'linear':
-						all_layers.append(prev_layer)
-					elif activation == 'leaky':
-						act_layer = LeakyReLU(alpha=0.1)(prev_layer)
-						prev_layer = act_layer
-						all_layers.append(act_layer)
-
-				elif section.startswith('route'):
-					ids = [int(i) for i in cfg_parser[section]['layers'].split(',')]
-					layers = [all_layers[i] for i in ids]
-					if len(layers) > 1:
-						print('Concatenating route layers:', layers)
-						concatenate_layer = Concatenate()(layers)
-						all_layers.append(concatenate_layer)
-						prev_layer = concatenate_layer
-					else:
-						skip_layer = layers[0]  # only one layer to route
-						all_layers.append(skip_layer)
-						prev_layer = skip_layer
-
-				elif section.startswith('maxpool'):
-					size = int(cfg_parser[section]['size'])
-					stride = int(cfg_parser[section]['stride'])
-					all_layers.append(
-						MaxPooling2D(
-							pool_size=(size, size),
-							strides=(stride, stride),
-							padding='same')(prev_layer))
-					prev_layer = all_layers[-1]
-
-				elif section.startswith('shortcut'):
-					index = int(cfg_parser[section]['from'])
-					activation = cfg_parser[section]['activation']
-					assert activation == 'linear', 'Only linear activation supported.'
-					all_layers.append(Add()([all_layers[index], prev_layer]))
-					prev_layer = all_layers[-1]
-
-				elif section.startswith('upsample'):
-					stride = int(cfg_parser[section]['stride'])
-					assert stride == 2, 'Only stride=2 supported.'
-					all_layers.append(UpSampling2D(stride)(prev_layer))
-					prev_layer = all_layers[-1]
-
-				elif section.startswith('yolo'):
-					out_index.append(len(all_layers)-1)
-					all_layers.append(None)
-					prev_layer = all_layers[-1]
-
-				elif section.startswith('net'):
-					pass
-
-				else:
-					raise ValueError(
-						'Unsupported section header type: {}'.format(section))
-
-			# Create and save model.
-			if len(out_index) == 0:
-				out_index.append(len(all_layers)-1)
-
-			model = Model(inputs=input_layer, outputs=[all_layers[i] for i in out_index])
-			print(model.summary())
-
-			if self.config.is_darknet_saving_enabled():
-				# remove old model when all saving features are enabled
-				if self.config.get_model_name() != '' and self.config.get_should_save_darknet_model() and self.config.get_should_save_darknet_weights():
-					print("Removing old darknet model...")
-					darknet_files = [
-						self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.json",
-						self.config.get_model_output_path() + self.config.get_model_name() + '.darknet.h5'
-					]
-					for darknetfile in darknet_files:
-						try:
-							if os.path.isfile(darknetfile):
-								os.unlink(darknetfile)
-						except Exception as e:
-							print(e)
-
-				if self.config.get_should_save_darknet_model():
-					model_json = model.to_json()
-					with open(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.json", "w") as json_file:
-						json_file.write(model_json)
-
-				if self.config.get_should_save_darknet_weights():
-					model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + '.darknet.h5')
-					print("Model's weights saved to disk.")
-
-				# Check to see if all weights have been read.
-				remaining_weights = len(weights_file.read()) / 4
-				weights_file.close()
-				print('Read {} of {} from Darknet weights.'.format(count, count + remaining_weights))
-				if remaining_weights > 0:
-					print('Warning: {} unused weights'.format(remaining_weights))
 
 		return self
 
@@ -1701,13 +1793,13 @@ class BlastML:
 		return data
 
 	def create_project(self):
-		def remove_folder(folder = None):
+		def remove_folder(folder=None):
 			if folder is None:
 				return
 
 			shutil.rmtree(folder)
 
-		def create_folder(folder = None):
+		def create_folder(folder=None):
 			if folder is None:
 				return
 
@@ -1888,6 +1980,10 @@ def main():
 				'class_names': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/classes.txt',
 				'anchors': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/anchors.txt',
 				'log': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/log',
+				"score": 0.3,
+				"iou": 0.45,
+				"model_image_size": (416, 416),
+				"gpu_num": 1,
 				'enable_saving': True,
 				'save_model': True,
 				'save_weights': True
@@ -1925,10 +2021,11 @@ def main():
 	# 	.evaluate()
 
 	# convert DarkNet model+weights to Keras model+weights
-	# net.darknet_to_keras()
+	# net.darknet().export_to_keras()
 
-	# train darknet model with model/data
-	net.darknet().create().compile().train()
+	# train yolo model using darknet with model/data
+	# net.yolo().create().compile().train()
+	net.yolo().load_model()
 
 	# load model, create history (optional) and infer (test) your files (/inference)
 	# cfg.threads = 1  # better to use 1 thread, but you can change it.
