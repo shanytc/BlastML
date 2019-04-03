@@ -951,7 +951,7 @@ class DarkNet:
 			steps_per_epoch=max(1, num_train//batch_size),
 			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
 			validation_steps=max(1, num_val//batch_size),
-			epochs=5,
+			epochs=25,
 			initial_epoch=0,
 			callbacks=[logging, checkpoint])
 
@@ -974,8 +974,8 @@ class DarkNet:
 			steps_per_epoch=max(1, num_train//batch_size),
 			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
 			validation_steps=max(1, num_val//batch_size),
-			epochs=7,
-			initial_epoch=5,
+			epochs=25,
+			initial_epoch=25,
 			callbacks=[logging, checkpoint, reduce_lr, early_stopping])
 
 		self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
@@ -2111,11 +2111,11 @@ def main():
 	# 	.evaluate()
 
 	# convert DarkNet model+weights to Keras model+weights
-	# net.darknet().export_to_keras()
+	# net.yolo().export_to_keras()
 
 	# train yolo model using darknet with model/data
-	net.yolo().create().compile().train()
-	# net.yolo().load_model().infer()
+	# net.yolo().create().compile().train()
+	net.yolo().load_model().infer()
 
 	# load model, create history (optional) and infer (test) your files (/inference)
 	# cfg.threads = 1  # better to use 1 thread, but you can change it.
@@ -2123,5 +2123,3 @@ def main():
 	# print(res)  # show embeddings/classification results
 
 main()
-
-# qsub -I -V -N kukk -l nodes=hdb914:gpus=4

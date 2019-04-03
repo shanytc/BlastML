@@ -1,2 +1,7 @@
 /.idea/
 BlastML.iml
+/dist
+/build
+/BlastML.egg-info
+setup.py
+BlastML/__init__.py
