@@ -129,13 +129,14 @@ class CFG:
 
 		# DarkNet settings (Object Detection)
 		self.darknet_enable_saving = object_detection['yolo']['enable_saving']
-		self.darknet_cfg = object_detection['yolo']['cfg']
-		self.darknet_weights = object_detection['yolo']['weights']
+		self.darknet_cfg = self.project_folder_path + object_detection['yolo']['cfg']
+		self.darknet_weights = self.project_folder_path + object_detection['yolo']['weights']
 		self.darknet_save_model = object_detection['yolo']['save_model']
 		self.darknet_save_weight = object_detection['yolo']['save_weights']
-		self.darknet_training_data = object_detection['yolo']['training_data']
-		self.darknet_classes_data = object_detection['yolo']['class_names']
-		self.darknet_anchors_data = object_detection['yolo']['anchors']
+		self.darknet_training_data = self.project_folder_path + object_detection['yolo']['training_data']
+		self.darknet_classes_data = self.project_folder_path + object_detection['yolo']['class_names']
+		self.darknet_anchors_data = self.project_folder_path + object_detection['yolo']['anchors']
+		self.darknet_log_folder = self.project_folder_path + object_detection['yolo']['log']
 		self.darknet_infer_score = object_detection['yolo']['score']
 		self.darknet_infer_iou = object_detection['yolo']['iou']
 		self.darknet_input_size = object_detection['yolo']['model_image_size']
@@ -266,17 +267,19 @@ class CFG:
 	def get_darknet_anchors(self):
 		return self.darknet_anchors_data
 
+	def get_darknet_log_folder(self):
+		return self.darknet_log_folder
 
 class DarkNet:
 	def __init__(self, cfg=None):
 		self.config = cfg
 		self.annotation_path = self.config.get_darknet_training()
-		self.log_dir = '/ib/junk/junk/shany_ds/shany_proj/final_project/model/data/log/'
+		self.log_dir = self.config.get_darknet_log_folder()
 		self.classes_path = self.config.get_darknet_classes()
 		self.anchors_path = self.config.get_darknet_anchors()
 		self.class_names = self.get_classes(self.classes_path)
 		self.num_classes = len(self.class_names)
-		self.anchors = self.get_anchors(self.anchors_path)
+
 		self.boxes = None
 		self.scores = None
 		self.classes = None
@@ -284,8 +287,9 @@ class DarkNet:
 		self.infer_class_names = []
 		self.colors = []
 		self.session = None
-		self.input_image_shape=None
+		self.input_image_shape = None
 		self.model = None
+		self.anchors = None
 
 	def DarknetConv2D(self, *args, **kwargs):
 		# Wrapper to set Darknet parameters for Convolution2D.
@@ -357,7 +361,7 @@ class DarkNet:
 		x = self.compose(
 			self.DarknetConv2D_BN_Leaky(128, (1, 1)),
 			UpSampling2D(2))(x)
-		x = Concatenate()([x,darknet.layers[92].output])
+		x = Concatenate()([x, darknet.layers[92].output])
 		x, y3 = self.make_last_layers(x, 128, num_anchors*(num_classes+5))
 
 		return Model(inputs, [y1, y2, y3])
@@ -832,7 +836,7 @@ class DarkNet:
 	def create_model(self, input_shape, anchors, num_classes, load_pretrained=True, freeze_body=2, weights_path='model_data/yolo_weights.h5'):
 		# create the training model
 
-		K.clear_session() # get a new session
+		K.clear_session()  # get a new session
 		image_input = Input(shape=(None, None, 3))
 		h, w = input_shape
 		num_anchors = len(anchors)
@@ -848,7 +852,8 @@ class DarkNet:
 			if freeze_body in [1, 2]:
 				# Freeze darknet53 body or freeze all but 3 output layers.
 				num = (185, len(model_body.layers)-3)[freeze_body-1]
-				for i in range(num): model_body.layers[i].trainable = False
+				for i in range(num):
+					model_body.layers[i].trainable = False
 				print('Freeze the first {} layers of total {} layers.'.format(num, len(model_body.layers)))
 
 		model_loss = Lambda(self.yolo_loss, output_shape=(1,), name='yolo_loss', arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})([*model_body.output, *y_true])
@@ -903,6 +908,10 @@ class DarkNet:
 	def create(self):
 		self.model = None
 		input_shape = (416, 416)  # multiple of 32, hw
+
+		# create anchors based on training+validation files
+		self.generate_anchors()
+		self.anchors = self.get_anchors(self.anchors_path)
 
 		is_tiny_version = len(self.anchors) == 6  # default setting
 		if is_tiny_version:
@@ -983,15 +992,14 @@ class DarkNet:
 		return self
 
 	def load_model(self):
+		# TODO: remove this guys, since we already defined them above
 		def _get_class(path):
-			classes_path = os.path.expanduser(path)
 			with open(path) as f:
 				class_names = f.readlines()
 			class_names = [c.strip() for c in class_names]
 			return class_names
 
 		def _get_anchors(path):
-			anchors_path = os.path.expanduser(path)
 			with open(path) as f:
 				anchors = f.readline()
 			anchors = [float(x) for x in anchors.split(',')]
@@ -1130,6 +1138,103 @@ class DarkNet:
 		# #return image
 
 		return out_boxes
+
+	def generate_anchors(self):
+		def iou(boxes, clusters, cluster_number):  # 1 box -> k clusters
+			n = boxes.shape[0]
+			k = cluster_number
+
+			box_area = boxes[:, 0] * boxes[:, 1]
+			box_area = box_area.repeat(k)
+			box_area = np.reshape(box_area, (n, k))
+
+			cluster_area = clusters[:, 0] * clusters[:, 1]
+			cluster_area = np.tile(cluster_area, [1, n])
+			cluster_area = np.reshape(cluster_area, (n, k))
+
+			box_w_matrix = np.reshape(boxes[:, 0].repeat(k), (n, k))
+			cluster_w_matrix = np.reshape(np.tile(clusters[:, 0], (1, n)), (n, k))
+			min_w_matrix = np.minimum(cluster_w_matrix, box_w_matrix)
+
+			box_h_matrix = np.reshape(boxes[:, 1].repeat(k), (n, k))
+			cluster_h_matrix = np.reshape(np.tile(clusters[:, 1], (1, n)), (n, k))
+			min_h_matrix = np.minimum(cluster_h_matrix, box_h_matrix)
+			inter_area = np.multiply(min_w_matrix, min_h_matrix)
+
+			result = inter_area / (box_area + cluster_area - inter_area)
+
+			return result
+
+		def avg_iou(boxes, clusters, cluster_number):
+			accuracy = np.mean([np.max(iou(boxes, clusters, cluster_number), axis=1)])
+			return accuracy
+
+		def kmeans(boxes, k, dist=np.median):
+			box_number = boxes.shape[0]
+			distances = np.empty((box_number, k))
+			last_nearest = np.zeros((box_number,))
+			np.random.seed()
+			clusters = boxes[np.random.choice(box_number, k, replace=False)]  # init k clusters
+			while True:
+				distances = 1 - iou(boxes, clusters, k)
+
+				current_nearest = np.argmin(distances, axis=1)
+				if (last_nearest == current_nearest).all():
+					break  # clusters won't change
+				for cluster in range(k):
+					clusters[cluster] = dist(  # update clusters
+						boxes[current_nearest == cluster], axis=0)
+
+				last_nearest = current_nearest
+
+			return clusters
+
+		dataSet = []
+		cluster_number = 9
+
+		# get files to cxalculate anchors from
+		files = self.get_training_files()  # get training data (combination of train + validation)
+
+		# self.config.get_darknet_anchors()
+		for line in files:
+			infos = line.split(" ")
+			length = len(infos)
+			for i in range(1, length):
+				width = int(infos[i].split(",")[2])  # - int(infos[i].split(",")[0])
+				height = int(infos[i].split(",")[3])  # - int(infos[i].split(",")[1])
+				dataSet.append([width, height])
+
+		all_boxes = np.array(dataSet)
+		result = kmeans(all_boxes, k=cluster_number)
+		f = open(self.config.get_darknet_anchors(), 'w')
+		row = np.shape(result)[0]
+		for i in range(row):
+			if i == 0:
+				x_y = "%d,%d" % (result[i][0], result[i][1])
+			else:
+				x_y = ", %d,%d" % (result[i][0], result[i][1])
+			f.write(x_y)
+		f.close()
+
+		print("K anchors:\n {}".format(result))
+		print("Accuracy: {:.2f}%".format(avg_iou(all_boxes, result, cluster_number) * 100))
+
+		return self
+
+	def generate_anchors2(self):
+		annotation_dims = []
+		size = np.zeros((1,1,3))
+		width_in_cfg_file = 416
+		height_in_cfg_file = 416
+
+		# get files to cxalculate anchors from
+		lines = self.get_training_files()  # get training data (combination of train + validation)
+		lines = [l.split(' ')[0] for l in lines]
+
+		# self.config.get_darknet_anchors()
+		#for line in lines:
+
+		return self
 
 	def export_to_keras(self):
 		# test darknet files exists

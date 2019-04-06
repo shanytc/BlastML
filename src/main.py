@@ -1,11 +1,11 @@
-from BlastML import CFG, BlastML
+from BlastML.blastml import CFG, BlastML
 
 def main():
 	# Configurations for BlastML
 	cfg = CFG(
 		project={
 			'project_name': 'shanynet',
-			'root': '/ib/junk/junk/shany_ds/shany_proj/',
+			'root': '/Users/i337936/Desktop/',  # '/home/ubuntu/projects/',
 			'project_folder': 'final_project/',
 			'dataset': 'dataset/',
 			'train': 'train/',
@@ -80,13 +80,13 @@ def main():
 			}
 		},
 		object_detection={
-			'yolo':{
-				'cfg': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3-1c.cfg',
-				'weights': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/yolov3.weights',
-				'training_data': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/train.txt',
-				'class_names': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/classes.txt',
-				'anchors': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/anchors.txt',
-				'log': '/ib/junk/junk/shany_ds/shany_proj/final_project/model/darknet/data/log',
+			'yolo': {
+				'cfg': 'model/darknet/yolov3-1c.cfg',
+				'weights': 'model/darknet/yolov3.weights',
+				'training_data': 'model/darknet/data/train.txt',
+				'class_names': 'model/darknet/data/classes.txt',
+				'anchors': 'model/darknet/data/anchors.txt',
+				'log': 'model/darknet/data/log',
 				"score": 0.3,
 				"iou": 0.45,
 				"model_image_size": (416, 416),
@@ -132,8 +132,10 @@ def main():
 	# net.yolo().export_to_keras()
 
 	# train yolo model using darknet with model/data
-	# net.yolo().create().compile().train()
-	net.yolo().load_model().infer()
+	net.yolo().create().compile().train()
+
+	# infer yolo model
+	# net.yolo().load_model().infer()
 
 # load model, create history (optional) and infer (test) your files (/inference)
 # cfg.threads = 1  # better to use 1 thread, but you can change it.
