@@ -106,6 +106,10 @@ def main():
 	# Create a BlastML instance
 	net = BlastML(cfg=cfg)
 
+	##################
+	#  CNN Examples  #
+	##################
+
 	# Create new project from dataset/ folder (contains only classes and their images)
 	# net.create_project()
 
@@ -134,21 +138,28 @@ def main():
 	# 	.train()\
 	# 	.evaluate()
 
+	# load model, create history (optional) and infer (test) your files (/inference)
+	# cfg.threads = 1  # better to use 1 thread, but you can change it.
+	# res = net.load_model().plot_history().infer()
+	# print(res)  # show embeddings/classification results
+
+	####################
+	#   YOLO Examples  #
+	####################
+
 	# convert DarkNet model+weights to Keras model+weights
 	# net.yolo().export_to_keras()
+
+	# Calculate YOLOv3 anchors (this is done automatically when we train our model) and save them to anchors.txt (check darknet cfg)
 	#net.yolo().generate_anchors()
-	net.yolo().rectLabel_to_YOLOv3()
+
+	# Convert RectLabel csv export file to YOLOv3 format used in this BlastML implementation
+	# net.yolo().rectLabel_to_YOLOv3()
 
 	# train yolo model using darknet with model/data
 	# net.yolo().create().compile().train()
 
 	# infer yolo model
 	# net.yolo().load_model().infer()
-
-	# load model, create history (optional) and infer (test) your files (/inference)
-	# cfg.threads = 1  # better to use 1 thread, but you can change it.
-	# res = net.load_model()#.export_to_tf().plot_history().infer()
-	# print(res)  # show embeddings/classification results
-
 
 main()
