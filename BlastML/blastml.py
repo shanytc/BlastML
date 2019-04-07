@@ -1097,8 +1097,7 @@ class DarkNet:
 			image_data /= 255.
 			image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
 
-			start = timer()
-
+			# infer the image
 			out_boxes, out_scores, out_classes = self.session.run(
 				[self.boxes, self.scores, self.classes],
 				feed_dict={
@@ -1120,15 +1119,16 @@ class DarkNet:
 				box = out_boxes[i]
 				score = out_scores[i]
 
-				label = '{} {:.2f}'.format(predicted_class, score)
+				label = '{} {:.0f}%'.format(predicted_class, score*100)
 				draw = ImageDraw.Draw(image)
 				label_size = draw.textsize(label, font)
 
 				top, left, bottom, right = box
-				top = max(0, np.floor(top + 0.5).astype('int32'))
-				left = max(0, np.floor(left + 0.5).astype('int32'))
-				bottom = min(image.size[1], np.floor(bottom + 0.5).astype('int32'))
-				right = min(image.size[0], np.floor(right + 0.5).astype('int32'))
+				top = max(0, np.floor(top - 0.5).astype('int32'))
+				left = max(0, np.floor(left - 0.5).astype('int32'))
+				bottom = min(image.size[1], np.floor(bottom - 0.5).astype('int32'))
+				right = min(image.size[0], np.floor(right - 0.5).astype('int32'))
+
 				print(label, (left, top), (right, bottom))
 
 				if top - label_size[1] >= 0:
@@ -1141,13 +1141,14 @@ class DarkNet:
 					draw.rectangle(
 						[left + i, top + i, right - i, bottom - i],
 						outline=self.colors[c])
+
 				draw.rectangle(
 					[tuple(text_origin), tuple(text_origin + label_size)],
 					fill=self.colors[c])
 				draw.text(text_origin, label, fill=(0, 0, 0), font=font)
 				del draw
 
-				#image.save(image_path)
+				image.save(image_path)
 
 	def generate_anchors(self):
 		def iou(boxes, clusters, cluster_number):  # 1 box -> k clusters

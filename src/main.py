@@ -92,7 +92,7 @@ def main():
 				'anchors': 'model/darknet/data/anchors.txt',
 				'log': 'model/darknet/data/log',
 				'rectlabel_csv': 'model/darknet/data/annotations.csv',
-				"score": 0.0,
+				"score": 0.3,
 				"iou": 0.45,
 				"model_image_size": (416, 416),
 				"gpu_num": 1,
