@@ -85,14 +85,14 @@ def main():
 		},
 		object_detection={
 			'yolo': {
-				'cfg': 'model/darknet/tiny-yolov3-1c.cfg',
-				'weights': 'model/darknet/yolov3-tiny.weights',
+				'cfg': 'model/darknet/yolov3.cfg',
+				'weights': 'model/darknet/yolov3.weights',
 				'training_data': 'model/darknet/data/train.txt',
 				'class_names': 'model/darknet/data/classes.txt',
 				'anchors': 'model/darknet/data/anchors.txt',
 				'log': 'model/darknet/data/log',
-				'rectlabel_csv': 'model/darknet/data/annotations2.csv',
-				"score": 0.3,
+				'rectlabel_csv': 'model/darknet/data/annotations.csv',
+				"score": 0.0,
 				"iou": 0.45,
 				"model_image_size": (416, 416),
 				"gpu_num": 1,
@@ -136,6 +136,8 @@ def main():
 
 	# convert DarkNet model+weights to Keras model+weights
 	# net.yolo().export_to_keras()
+	#net.yolo().generate_anchors()
+	net.yolo().rectLabel_to_YOLOv3()
 
 	# train yolo model using darknet with model/data
 	# net.yolo().create().compile().train()

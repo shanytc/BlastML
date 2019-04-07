@@ -24,6 +24,7 @@ from matplotlib.ticker import MaxNLocator
 import pickle
 import json
 import requests
+import pandas as pd
 import colorsys
 from urllib.request import urlopen
 from timeit import default_timer as timer
@@ -142,7 +143,7 @@ class CFG:
 		self.darknet_input_size = object_detection['yolo']['model_image_size']
 		self.darknet_infer_gpu = object_detection['yolo']['gpu_num']
 		self.darknet_clusters = object_detection['yolo']['clusters']
-		self.darknet_rectlabel_csv = object_detection['yolo']['rectlabel_csv']
+		self.darknet_rectlabel_csv = self.project_folder_path + object_detection['yolo']['rectlabel_csv']
 
 	def get_project_name(self):
 		return self.project_name
@@ -935,7 +936,7 @@ class DarkNet:
 			return self
 
 		# use custom yolo_loss Lambda layer.
-		self.model.compile(optimizer=Adam(lr=learning_rate), metrics=self.config.get_compile_metrics(), loss={'yolo_loss': lambda y_true, y_pred: y_pred})
+		self.model.compile(optimizer=Adam(lr=learning_rate, amsgrad=True), metrics=self.config.get_compile_metrics(), loss={'yolo_loss': lambda y_true, y_pred: y_pred})
 
 		return self
 
@@ -1072,12 +1073,15 @@ class DarkNet:
 			#img = img.convert('RGB')
 			return img
 
-		image_path = 'https://dsvf96nw4ftce.cloudfront.net/images/thumbnails/460/460/detailed/2/dog-bike-tow-leash-action2.jpg?t=1527115978'
-		image = img_loader_from_url(image_path)
+		# image_path = 'https://dsvf96nw4ftce.cloudfront.net/images/thumbnails/460/460/detailed/2/dog-bike-tow-leash-action2.jpg?t=1527115978'
+		# image = img_loader_from_url(image_path)
 
 		# try to find boxes in inference/ folder
 		files = [f for f in listdir(self.config.get_infer_path() + 'terrorists/') if isfile(join(self.config.get_infer_path() + 'terrorists/', f))]
 		for f in files:
+			if f == ".DS_Store":
+				continue
+
 			image_path = self.config.get_infer_path() + 'terrorists/' + f
 			image = img_loader(image_path)
 
@@ -1103,52 +1107,47 @@ class DarkNet:
 					K.learning_phase(): 0
 				})
 
-			end = timer()
+			#end = timer()
 
 			# print(end - start)
 			print("Boxes:" + str(len(out_boxes)) + " - " + f)
 
-		# font = ImageFont.truetype(font='font/FiraMono-Medium.otf', size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
-		# thickness = (image.size[0] + image.size[1]) // 300
-		#
-		# for i, c in reversed(list(enumerate(out_classes))):
-		# 	predicted_class = self.class_names[c]
-		# 	box = out_boxes[i]
-		# 	score = out_scores[i]
-		#
-		# 	label = '{} {:.2f}'.format(predicted_class, score)
-		# 	draw = ImageDraw.Draw(image)
-		# 	label_size = draw.textsize(label, font)
-		#
-		# 	top, left, bottom, right = box
-		# 	top = max(0, np.floor(top + 0.5).astype('int32'))
-		# 	left = max(0, np.floor(left + 0.5).astype('int32'))
-		# 	bottom = min(image.size[1], np.floor(bottom + 0.5).astype('int32'))
-		# 	right = min(image.size[0], np.floor(right + 0.5).astype('int32'))
-		# 	print(label, (left, top), (right, bottom))
-		#
-		# 	if top - label_size[1] >= 0:
-		# 		text_origin = np.array([left, top - label_size[1]])
-		# 	else:
-		# 		text_origin = np.array([left, top + 1])
-		#
-		# 	# My kingdom for a good redistributable image drawing library.
-		# 	for i in range(thickness):
-		# 		draw.rectangle(
-		# 			[left + i, top + i, right - i, bottom - i],
-		# 			outline=self.colors[c])
-		# 	draw.rectangle(
-		# 		[tuple(text_origin), tuple(text_origin + label_size)],
-		# 		fill=self.colors[c])
-		# 	draw.text(text_origin, label, fill=(0, 0, 0), font=font)
-		# 	del draw
-		#
-		# end = timer()
-		# print(end - start)
-		#
-		# #return image
+			font = ImageFont.truetype(font='Arial.ttf', size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
+			thickness = (image.size[0] + image.size[1]) // 300
 
-		return out_boxes
+			for i, c in reversed(list(enumerate(out_classes))):
+				predicted_class = self.class_names[c]
+				box = out_boxes[i]
+				score = out_scores[i]
+
+				label = '{} {:.2f}'.format(predicted_class, score)
+				draw = ImageDraw.Draw(image)
+				label_size = draw.textsize(label, font)
+
+				top, left, bottom, right = box
+				top = max(0, np.floor(top + 0.5).astype('int32'))
+				left = max(0, np.floor(left + 0.5).astype('int32'))
+				bottom = min(image.size[1], np.floor(bottom + 0.5).astype('int32'))
+				right = min(image.size[0], np.floor(right + 0.5).astype('int32'))
+				print(label, (left, top), (right, bottom))
+
+				if top - label_size[1] >= 0:
+					text_origin = np.array([left, top - label_size[1]])
+				else:
+					text_origin = np.array([left, top + 1])
+
+				# My kingdom for a good redistributable image drawing library.
+				for i in range(thickness):
+					draw.rectangle(
+						[left + i, top + i, right - i, bottom - i],
+						outline=self.colors[c])
+				draw.rectangle(
+					[tuple(text_origin), tuple(text_origin + label_size)],
+					fill=self.colors[c])
+				draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+				del draw
+
+				#image.save(image_path)
 
 	def generate_anchors(self):
 		def iou(boxes, clusters, cluster_number):  # 1 box -> k clusters
@@ -1263,14 +1262,14 @@ class DarkNet:
 		# convert RectLabel tool (xml->csv) to YOLOv3 format
 		file = self.config.get_darknet_rectlabel_csv()
 		os.remove(self.config.get_darknet_training())
-		f = open(self.config.get_darknet_training(), "w+")
+		f = open(self.config.get_darknet_training(), "w")
 		data = pd.read_csv(file, sep='\t')
 
 		for i, j in data.iterrows():
 			cols = list(j)
 			row_data = cols[0].split(",[")
-			file_name = row_data[0]
 			json_data = json.loads("["+row_data[1])
+			file_name = json_data[0]['label'] + "/" + os.path.basename(row_data[0])
 
 			file_data = file_name + " "
 			for box in json_data:
