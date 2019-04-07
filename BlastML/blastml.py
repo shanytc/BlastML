@@ -1148,7 +1148,8 @@ class DarkNet:
 				draw.text(text_origin, label, fill=(0, 0, 0), font=font)
 				del draw
 
-				image.save(image_path)
+				file_info = image_path.split(".")
+				image.save(file_info[0] + "_infer.jpg")
 
 	def generate_anchors(self):
 		def iou(boxes, clusters, cluster_number):  # 1 box -> k clusters
