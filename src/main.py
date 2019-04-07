@@ -160,6 +160,6 @@ def main():
 	# net.yolo().create().compile().train()
 
 	# infer yolo model
-	net.yolo().load_model().infer()
+	# net.yolo().load_model().infer()
 
 main()
