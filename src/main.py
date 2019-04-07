@@ -1,11 +1,15 @@
 from BlastML.blastml import CFG, BlastML
+import pandas as pd
+
+# /Users/i337936/Desktop/
+# /home/ubuntu/projects/
 
 def main():
 	# Configurations for BlastML
 	cfg = CFG(
 		project={
 			'project_name': 'shanynet',
-			'root': '/Users/i337936/Desktop/',  # '/home/ubuntu/projects/',
+			'root': '/Users/i337936/Desktop/',
 			'project_folder': 'final_project/',
 			'dataset': 'dataset/',
 			'train': 'train/',
@@ -29,7 +33,7 @@ def main():
 		},
 		hyper_params={
 			'batch': 32,
-			'epochs': 1,
+			'epochs': 100,
 			'classes': 5,
 			'class_mode': 'sparse',
 			'shuffle': False,
@@ -81,19 +85,21 @@ def main():
 		},
 		object_detection={
 			'yolo': {
-				'cfg': 'model/darknet/yolov3-1c.cfg',
-				'weights': 'model/darknet/yolov3.weights',
+				'cfg': 'model/darknet/tiny-yolov3-1c.cfg',
+				'weights': 'model/darknet/yolov3-tiny.weights',
 				'training_data': 'model/darknet/data/train.txt',
 				'class_names': 'model/darknet/data/classes.txt',
 				'anchors': 'model/darknet/data/anchors.txt',
 				'log': 'model/darknet/data/log',
+				'rectlabel_csv': 'model/darknet/data/annotations2.csv',
 				"score": 0.3,
 				"iou": 0.45,
 				"model_image_size": (416, 416),
 				"gpu_num": 1,
 				'enable_saving': True,
 				'save_model': True,
-				'save_weights': True
+				'save_weights': True,
+				'clusters': 6
 			}
 		})
 
@@ -106,7 +112,7 @@ def main():
 	#  compile, train and evaluate a simple cnn instance
 	# net.simple().compile().train().evaluate().infer()
 
-	#  compile, train and evaluate a vgg16 instance
+	#  compile, train and evaluate a vgg16 instances
 	#net.vgg16().compile().train().evaluate()
 
 	#  compile, train and evaluate a resnet18 instance
@@ -132,14 +138,15 @@ def main():
 	# net.yolo().export_to_keras()
 
 	# train yolo model using darknet with model/data
-	net.yolo().create().compile().train()
+	# net.yolo().create().compile().train()
 
 	# infer yolo model
 	# net.yolo().load_model().infer()
 
-# load model, create history (optional) and infer (test) your files (/inference)
-# cfg.threads = 1  # better to use 1 thread, but you can change it.
-# res = net.load_model()#.export_to_tf().plot_history().infer()
-# print(res)  # show embeddings/classification results
+	# load model, create history (optional) and infer (test) your files (/inference)
+	# cfg.threads = 1  # better to use 1 thread, but you can change it.
+	# res = net.load_model()#.export_to_tf().plot_history().infer()
+	# print(res)  # show embeddings/classification results
+
 
 main()

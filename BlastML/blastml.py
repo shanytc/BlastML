@@ -141,6 +141,8 @@ class CFG:
 		self.darknet_infer_iou = object_detection['yolo']['iou']
 		self.darknet_input_size = object_detection['yolo']['model_image_size']
 		self.darknet_infer_gpu = object_detection['yolo']['gpu_num']
+		self.darknet_clusters = object_detection['yolo']['clusters']
+		self.darknet_rectlabel_csv = object_detection['yolo']['rectlabel_csv']
 
 	def get_project_name(self):
 		return self.project_name
@@ -269,6 +271,12 @@ class CFG:
 
 	def get_darknet_log_folder(self):
 		return self.darknet_log_folder
+
+	def get_darknet_clusters(self):
+		return self.darknet_clusters
+
+	def get_darknet_rectlabel_csv(self):
+		return self.darknet_rectlabel_csv
 
 class DarkNet:
 	def __init__(self, cfg=None):
@@ -879,7 +887,8 @@ class DarkNet:
 			if freeze_body in [1, 2]:
 				# Freeze the darknet body or freeze all but 2 output layers.
 				num = (20, len(model_body.layers)-2)[freeze_body-1]
-				for i in range(num): model_body.layers[i].trainable = False
+				for i in range(num):
+					model_body.layers[i].trainable = False
 				print('Freeze the first {} layers of total {} layers.'.format(num, len(model_body.layers)))
 
 		model_loss = Lambda(self.yolo_loss, output_shape=(1,), name='yolo_loss', arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.7})([*model_body.output, *y_true])
@@ -909,7 +918,7 @@ class DarkNet:
 		self.model = None
 		input_shape = (416, 416)  # multiple of 32, hw
 
-		# create anchors based on training+validation files
+		# create anchors based on training+validation files before training
 		self.generate_anchors()
 		self.anchors = self.get_anchors(self.anchors_path)
 
@@ -926,7 +935,7 @@ class DarkNet:
 			return self
 
 		# use custom yolo_loss Lambda layer.
-		self.model.compile(optimizer=RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0), metrics=self.config.get_compile_metrics(), loss={'yolo_loss': lambda y_true, y_pred: y_pred})
+		self.model.compile(optimizer=Adam(lr=learning_rate), metrics=self.config.get_compile_metrics(), loss={'yolo_loss': lambda y_true, y_pred: y_pred})
 
 		return self
 
@@ -960,7 +969,7 @@ class DarkNet:
 			steps_per_epoch=max(1, num_train//batch_size),
 			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
 			validation_steps=max(1, num_val//batch_size),
-			epochs=25,
+			epochs=self.config.get_num_epochs()//2,
 			initial_epoch=0,
 			callbacks=[logging, checkpoint])
 
@@ -983,11 +992,13 @@ class DarkNet:
 			steps_per_epoch=max(1, num_train//batch_size),
 			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
 			validation_steps=max(1, num_val//batch_size),
-			epochs=25,
-			initial_epoch=25,
+			epochs=self.config.get_num_epochs(),
+			initial_epoch=self.config.get_num_epochs()//2,
 			callbacks=[logging, checkpoint, reduce_lr, early_stopping])
 
 		self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
+
+		print('Training complete.')
 
 		return self
 
@@ -1190,7 +1201,7 @@ class DarkNet:
 			return clusters
 
 		dataSet = []
-		cluster_number = 9
+		cluster_number = self.config.get_darknet_clusters()
 
 		# get files to cxalculate anchors from
 		files = self.get_training_files()  # get training data (combination of train + validation)
@@ -1223,7 +1234,7 @@ class DarkNet:
 
 	def generate_anchors2(self):
 		annotation_dims = []
-		size = np.zeros((1,1,3))
+		size = np.zeros((1, 1, 3))
 		width_in_cfg_file = 416
 		height_in_cfg_file = 416
 
@@ -1233,6 +1244,44 @@ class DarkNet:
 
 		# self.config.get_darknet_anchors()
 		#for line in lines:
+
+		return self
+
+	def rectLabel_to_YOLOv3(self):
+		# for RectLabel tool, go here: https://github.com/ryouchinsa/Rectlabel-support
+
+		# create labels index
+		labels = {}
+		with open(self.config.get_darknet_classes(), 'r') as f:
+			lines = f.readlines()
+
+		index = 0
+		for c in lines:
+			labels[c] = index
+			index += 1
+
+		# convert RectLabel tool (xml->csv) to YOLOv3 format
+		file = self.config.get_darknet_rectlabel_csv()
+		os.remove(self.config.get_darknet_training())
+		f = open(self.config.get_darknet_training(), "w+")
+		data = pd.read_csv(file, sep='\t')
+
+		for i, j in data.iterrows():
+			cols = list(j)
+			row_data = cols[0].split(",[")
+			file_name = row_data[0]
+			json_data = json.loads("["+row_data[1])
+
+			file_data = file_name + " "
+			for box in json_data:
+				file_data += str(box['coordinates']['x']) + "," + str(box['coordinates']['y']) + "," + str(box['coordinates']['x'] + box['coordinates']['width']) + "," + str(box['coordinates']['y'] + box['coordinates']['height']) + "," + str(labels[box['label']]) + " "
+
+			file_data = file_data.strip()
+			f.write(file_data + "\r\n")
+
+		f.close()
+
+		print("Successfully exported RectLabel to YOLOv3 train format.")
 
 		return self
 
