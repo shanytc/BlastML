@@ -146,7 +146,7 @@ class CFG:
 		self.darknet_draw_bboxes = object_detection['yolo']['draw_bboxes']
 		self.darknet_rectlabel_csv = self.project_folder_path + object_detection['yolo']['rectlabel_csv']
 		self.darknet_bboxes_font = self.project_folder_path + object_detection['yolo']['bboxes_font']
-		self.darknet_exclude_infer_classes = self.project_folder_path + object_detection['yolo']['exclude_infer_classes']
+		self.darknet_exclude_infer_classes = object_detection['yolo']['exclude_infer_classes']
 
 	def get_project_name(self):
 		return self.project_name
