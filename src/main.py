@@ -92,6 +92,7 @@ def main():
 				'anchors': 'model/darknet/data/anchors.txt',
 				'log': 'model/darknet/data/log',
 				'rectlabel_csv': 'model/darknet/data/annotations.csv',
+				'bboxes_font': 'model/darknet/data/Arial.ttf',
 				"score": 0.3,
 				"iou": 0.45,
 				"model_image_size": (416, 416),
@@ -99,7 +100,8 @@ def main():
 				'enable_saving': True,
 				'save_model': True,
 				'save_weights': True,
-				'clusters': 6
+				'clusters': 6,
+				'draw_bboxes': True
 			}
 		})
 
@@ -154,7 +156,7 @@ def main():
 	#net.yolo().generate_anchors()
 
 	# Convert RectLabel csv export file to YOLOv3 format used in this BlastML implementation
-	# net.yolo().rectLabel_to_YOLOv3()
+	net.yolo().rectLabel_to_YOLOv3()
 
 	# train yolo model using darknet with model/data
 	# net.yolo().create().compile().train()

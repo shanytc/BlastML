@@ -143,7 +143,9 @@ class CFG:
 		self.darknet_input_size = object_detection['yolo']['model_image_size']
 		self.darknet_infer_gpu = object_detection['yolo']['gpu_num']
 		self.darknet_clusters = object_detection['yolo']['clusters']
+		self.darknet_draw_bboxes = object_detection['yolo']['draw_bboxes']
 		self.darknet_rectlabel_csv = self.project_folder_path + object_detection['yolo']['rectlabel_csv']
+		self.darknet_bboxes_font = self.project_folder_path + object_detection['yolo']['bboxes_font']
 
 	def get_project_name(self):
 		return self.project_name
@@ -278,6 +280,12 @@ class CFG:
 
 	def get_darknet_rectlabel_csv(self):
 		return self.darknet_rectlabel_csv
+
+	def is_draw_bboxes_enabled(self):
+		return self.darknet_draw_bboxes
+
+	def get_darknet_bboxes_font(self):
+		return self.darknet_bboxes_font
 
 class DarkNet:
 	def __init__(self, cfg=None):
@@ -1077,79 +1085,89 @@ class DarkNet:
 		# image = img_loader_from_url(image_path)
 
 		# try to find boxes in inference/ folder
-		files = [f for f in listdir(self.config.get_infer_path() + 'terrorists/') if isfile(join(self.config.get_infer_path() + 'terrorists/', f))]
-		for f in files:
-			if f == ".DS_Store":
-				continue
+		bboxes = []
+		folders = [f for f in listdir(self.config.get_infer_path()) if not isfile(join(self.config.get_infer_path(), f))]
 
-			image_path = self.config.get_infer_path() + 'terrorists/' + f
-			image = img_loader(image_path)
+		for folder in folders:
+			files = [f for f in listdir(self.config.get_infer_path() + folder + "/") if isfile(join(self.config.get_infer_path() + folder + "/", f))]
 
-			if self.config.darknet_input_size != (None, None):
-				assert self.config.darknet_input_size[0] % 32 == 0, 'Multiples of 32 required'
-				assert self.config.darknet_input_size[1] % 32 == 0, 'Multiples of 32 required'
-				boxed_image = self.letterbox_image(image, tuple(reversed(self.config.darknet_input_size)))
-			else:
-				new_image_size = (image.width - (image.width % 32), image.height - (image.height % 32))
-				boxed_image = self.letterbox_image(image, new_image_size)
-			image_data = np.array(boxed_image, dtype='float32')
+			for f in files:
+				if f == ".DS_Store":
+					continue
 
-			image_data /= 255.
-			image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+				image_path = self.config.get_infer_path() + folder + "/" + f
+				image = img_loader(image_path)
 
-			# infer the image
-			out_boxes, out_scores, out_classes = self.session.run(
-				[self.boxes, self.scores, self.classes],
-				feed_dict={
-					self.model.input: image_data,
-					self.input_image_shape: [image.size[1], image.size[0]],
-					K.learning_phase(): 0
+				if self.config.darknet_input_size != (None, None):
+					assert self.config.darknet_input_size[0] % 32 == 0, 'Multiples of 32 required'
+					assert self.config.darknet_input_size[1] % 32 == 0, 'Multiples of 32 required'
+					boxed_image = self.letterbox_image(image, tuple(reversed(self.config.darknet_input_size)))
+				else:
+					new_image_size = (image.width - (image.width % 32), image.height - (image.height % 32))
+					boxed_image = self.letterbox_image(image, new_image_size)
+				image_data = np.array(boxed_image, dtype='float32')
+
+				image_data /= 255.
+				image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+
+				# infer the image
+				out_boxes, out_scores, out_classes = self.session.run(
+					[self.boxes, self.scores, self.classes],
+					feed_dict={
+						self.model.input: image_data,
+						self.input_image_shape: [image.size[1], image.size[0]],
+						K.learning_phase(): 0
+					})
+
+				bboxes.append({
+					'file': self.config.get_infer_path() + folder + f,
+					'bboxes': out_boxes,
+					'count': len(out_boxes)
 				})
 
-			#end = timer()
+				print("Boxes:" + str(len(out_boxes)) + " - " + f)
 
-			# print(end - start)
-			print("Boxes:" + str(len(out_boxes)) + " - " + f)
+				if self.config.is_draw_bboxes_enabled() and len(out_boxes) > 0:
+					font = ImageFont.truetype(font=self.config.get_darknet_bboxes_font(), size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
+					thickness = (image.size[0] + image.size[1]) // 300
 
-			font = ImageFont.truetype(font='Arial.ttf', size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
-			thickness = (image.size[0] + image.size[1]) // 300
+					for i, c in reversed(list(enumerate(out_classes))):
+						predicted_class = self.class_names[c]
+						box = out_boxes[i]
+						score = out_scores[i]
 
-			for i, c in reversed(list(enumerate(out_classes))):
-				predicted_class = self.class_names[c]
-				box = out_boxes[i]
-				score = out_scores[i]
+						label = '{} {:.0f}%'.format(predicted_class, score*100)
+						draw = ImageDraw.Draw(image)
+						label_size = draw.textsize(label, font)
 
-				label = '{} {:.0f}%'.format(predicted_class, score*100)
-				draw = ImageDraw.Draw(image)
-				label_size = draw.textsize(label, font)
+						top, left, bottom, right = box
+						top = max(0, np.floor(top - 80.5).astype('int32'))
+						left = max(0, np.floor(left - 60.5).astype('int32'))
+						bottom = min(image.size[1], np.floor(bottom - 80.5).astype('int32'))
+						right = min(image.size[0], np.floor(right - 60.5).astype('int32'))
 
-				top, left, bottom, right = box
-				top = max(0, np.floor(top - 0.5).astype('int32'))
-				left = max(0, np.floor(left - 0.5).astype('int32'))
-				bottom = min(image.size[1], np.floor(bottom - 0.5).astype('int32'))
-				right = min(image.size[0], np.floor(right - 0.5).astype('int32'))
+						print(label, (left, top), (right, bottom))
 
-				print(label, (left, top), (right, bottom))
+						if top - label_size[1] >= 0:
+							text_origin = np.array([left, top - label_size[1]])
+						else:
+							text_origin = np.array([left, top + 1])
 
-				if top - label_size[1] >= 0:
-					text_origin = np.array([left, top - label_size[1]])
-				else:
-					text_origin = np.array([left, top + 1])
+						# My kingdom for a good redistributable image drawing library.
+						for i in range(thickness):
+							draw.rectangle(
+								[left + i, top + i, right - i, bottom - i],
+								outline=self.colors[c])
 
-				# My kingdom for a good redistributable image drawing library.
-				for i in range(thickness):
-					draw.rectangle(
-						[left + i, top + i, right - i, bottom - i],
-						outline=self.colors[c])
+						draw.rectangle(
+							[tuple(text_origin), tuple(text_origin + label_size)],
+							fill=self.colors[c])
+						draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+						del draw
 
-				draw.rectangle(
-					[tuple(text_origin), tuple(text_origin + label_size)],
-					fill=self.colors[c])
-				draw.text(text_origin, label, fill=(0, 0, 0), font=font)
-				del draw
-
-				file_info = image_path.split(".")
-				image.save(file_info[0] + "_infer.jpg")
+						file_info = image_path.split(".")
+						image.save(file_info[0] + "_infer.jpg")
+		return bboxes
 
 	def generate_anchors(self):
 		def iou(boxes, clusters, cluster_number):  # 1 box -> k clusters
@@ -1263,7 +1281,11 @@ class DarkNet:
 
 		# convert RectLabel tool (xml->csv) to YOLOv3 format
 		file = self.config.get_darknet_rectlabel_csv()
-		os.remove(self.config.get_darknet_training())
+
+		# remove train file if exists
+		if os.path.isfile(self.config.get_darknet_training()):
+			os.remove(self.config.get_darknet_training())
+
 		f = open(self.config.get_darknet_training(), "w")
 		data = pd.read_csv(file, sep='\t')
 
@@ -1403,7 +1425,7 @@ class DarkNet:
 								activation, section))
 
 					# Create Conv2D layer
-					if stride>1:
+					if stride > 1:
 						# Darknet uses left and top padding instead of 'same' mode
 						prev_layer = ZeroPadding2D(((1,0),(1,0)))(prev_layer)
 					conv_layer = (Conv2D(
@@ -1528,10 +1550,13 @@ class BlastML:
 		self.classes = None
 		self.history = None
 		self.bottleneck = None
-		self.Darknet = DarkNet(self.config)
+		self.Darknet = None
 
 	# DarkNet CNN
 	def yolo(self):
+		if self.Darknet is None:
+			self.Darknet = DarkNet(self.config)
+
 		return self.Darknet
 
 	# ResNet18 CNN
