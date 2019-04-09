@@ -101,7 +101,8 @@ def main():
 				'save_model': True,
 				'save_weights': True,
 				'clusters': 6,
-				'draw_bboxes': True
+				'draw_bboxes': True,
+				'exclude_infer_classes': ['guns', 'humans', 'knifes']
 			}
 		})
 

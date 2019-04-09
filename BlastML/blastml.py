@@ -146,6 +146,7 @@ class CFG:
 		self.darknet_draw_bboxes = object_detection['yolo']['draw_bboxes']
 		self.darknet_rectlabel_csv = self.project_folder_path + object_detection['yolo']['rectlabel_csv']
 		self.darknet_bboxes_font = self.project_folder_path + object_detection['yolo']['bboxes_font']
+		self.darknet_exclude_infer_classes = self.project_folder_path + object_detection['yolo']['exclude_infer_classes']
 
 	def get_project_name(self):
 		return self.project_name
@@ -286,6 +287,9 @@ class CFG:
 
 	def get_darknet_bboxes_font(self):
 		return self.darknet_bboxes_font
+
+	def get_darknet_exclude_infer_classes(self):
+		return self.darknet_exclude_infer_classes
 
 class DarkNet:
 	def __init__(self, cfg=None):
@@ -1089,6 +1093,9 @@ class DarkNet:
 		folders = [f for f in listdir(self.config.get_infer_path()) if not isfile(join(self.config.get_infer_path(), f))]
 
 		for folder in folders:
+			if folder in self.get_darknet_exclude_infer_classes():
+				continue
+
 			files = [f for f in listdir(self.config.get_infer_path() + folder + "/") if isfile(join(self.config.get_infer_path() + folder + "/", f))]
 
 			for f in files:
