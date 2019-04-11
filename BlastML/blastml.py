@@ -147,6 +147,8 @@ class CFG:
 		self.darknet_rectlabel_csv = self.project_folder_path + object_detection['yolo']['rectlabel_csv']
 		self.darknet_bboxes_font = self.project_folder_path + object_detection['yolo']['bboxes_font']
 		self.darknet_exclude_infer_classes = object_detection['yolo']['exclude_infer_classes']
+		self.darknet_enable_transfer_learning = object_detection['yolo']['enable_transfer_learning']
+		self.darknet_transfer_learning_epoch_ratio = object_detection['yolo']['transfer_learning_epoch_ratio']
 
 	def get_project_name(self):
 		return self.project_name
@@ -290,6 +292,12 @@ class CFG:
 
 	def get_darknet_exclude_infer_classes(self):
 		return self.darknet_exclude_infer_classes
+
+	def is_transfer_learning_enabled(self):
+		return self.darknet_enable_transfer_learning
+
+	def get_darknet_transfer_learning_epoch_ratio(self):
+		return self.darknet_transfer_learning_epoch_ratio
 
 class DarkNet:
 	def __init__(self, cfg=None):
@@ -976,40 +984,65 @@ class DarkNet:
 		# This step is enough to obtain a not bad model.
 
 		batch_size = self.config.get_batch_size()
-		print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
 
-		self.model.fit_generator(self.data_generator_wrapper(lines[:num_train], batch_size, input_shape, self.anchors, self.num_classes),
-			steps_per_epoch=max(1, num_train//batch_size),
-			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
-			validation_steps=max(1, num_val//batch_size),
-			epochs=self.config.get_num_epochs()//2,
-			initial_epoch=0,
-			callbacks=[logging, checkpoint])
+		if self.config.is_transfer_learning_enabled():
+			print('Transfer Learning: Training on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
 
-		self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.stage.h5")
+			self.model.fit_generator(self.data_generator_wrapper(lines[:num_train], batch_size, input_shape, self.anchors, self.num_classes),
+				steps_per_epoch=max(1, num_train//batch_size),
+				validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
+				validation_steps=max(1, num_val//batch_size),
+				epochs=self.config.get_darknet_transfer_learning_epoch_ratio()[0],  #self.config.get_num_epochs()//2,
+				initial_epoch=0,
+				callbacks=[logging, checkpoint])
 
-		# Unfreeze and continue training, to fine-tune.
-		# Train longer if the result is not good.
-		for i in range(len(self.model.layers)):
-			self.model.layers[i].trainable = True
+			print('Saving transfer learning yolo model.')
+			self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.stage.h5")
 
-		# re-compile with smaller learning rate
-		self.compile(1e-4)
+			# Unfreeze and continue training, to fine-tune.
+			# Train longer if the result is not good.
+			print('Unfreeze all layers.')
 
-		print('Unfreeze all of the layers.')
+			for i in range(len(self.model.layers)):
+				self.model.layers[i].trainable = True
 
-		batch_size = self.config.get_batch_size()  # note that more GPU memory is required after unfreezing the body
-		print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
+			# re-compile with smaller learning rate
+			self.compile(1e-4)
 
-		self.model.fit_generator(self.data_generator_wrapper(lines[:num_train], batch_size, input_shape, self.anchors, self.num_classes),
-			steps_per_epoch=max(1, num_train//batch_size),
-			validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
-			validation_steps=max(1, num_val//batch_size),
-			epochs=self.config.get_num_epochs(),
-			initial_epoch=self.config.get_num_epochs()//2,
-			callbacks=[logging, checkpoint, reduce_lr, early_stopping])
+			batch_size = self.config.get_batch_size()  # note that more GPU memory is required after unfreezing the body
+			print('Training on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
 
-		self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
+			self.model.fit_generator(self.data_generator_wrapper(lines[:num_train], batch_size, input_shape, self.anchors, self.num_classes),
+				steps_per_epoch=max(1, num_train//batch_size),
+				validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
+				validation_steps=max(1, num_val//batch_size),
+				epochs=(self.config.get_darknet_transfer_learning_epoch_ratio()[0]+self.config.get_darknet_transfer_learning_epoch_ratio()[1]),  # self.config.get_num_epochs(),
+				initial_epoch=self.config.get_darknet_transfer_learning_epoch_ratio()[0], #  self.config.get_num_epochs()//2,
+				callbacks=[logging, checkpoint, reduce_lr, early_stopping])
+
+			print('Saving trained yolo model.')
+			self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
+		else:
+			print('Unfreeze all layers.')
+
+			for i in range(len(self.model.layers)):
+				self.model.layers[i].trainable = True
+
+			# re-compile with smaller learning rate
+			self.compile(1e-4)
+
+			batch_size = self.config.get_batch_size()  # note that more GPU memory is required after unfreezing the body
+			print('Training on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
+
+			self.model.fit_generator(self.data_generator_wrapper(lines[:num_train], batch_size, input_shape, self.anchors, self.num_classes),
+				steps_per_epoch=max(1, num_train//batch_size),
+				validation_data=self.data_generator_wrapper(lines[num_train:], batch_size, input_shape, self.anchors, self.num_classes),
+				validation_steps=max(1, num_val//batch_size),
+				epochs=self.config.get_num_epochs(),
+				callbacks=[logging, checkpoint, reduce_lr, early_stopping])
+
+			print('Saving trained yolo model.')
+			self.model.save_weights(self.config.get_model_output_path() + self.config.get_model_name() + ".darknet.trained.h5")
 
 		print('Training complete.')
 
@@ -1093,7 +1126,7 @@ class DarkNet:
 		folders = [f for f in listdir(self.config.get_infer_path()) if not isfile(join(self.config.get_infer_path(), f))]
 
 		for folder in folders:
-			if folder in self.get_darknet_exclude_infer_classes():
+			if folder in self.config.get_darknet_exclude_infer_classes():
 				continue
 
 			files = [f for f in listdir(self.config.get_infer_path() + folder + "/") if isfile(join(self.config.get_infer_path() + folder + "/", f))]

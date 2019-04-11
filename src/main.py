@@ -102,7 +102,9 @@ def main():
 				'save_weights': True,
 				'clusters': 6,
 				'draw_bboxes': True,
-				'exclude_infer_classes': ['guns', 'humans', 'knifes']
+				'exclude_infer_classes': ['guns', 'humans', 'knifes'],
+				'enable_transfer_learning': False,
+				'transfer_learning_epoch_ratio': [50, 20]
 			}
 		})
 
