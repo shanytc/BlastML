@@ -101,6 +101,7 @@ def main():
 				'save_model': True,
 				'save_weights': True,
 				'clusters': 6,
+				'auto_estimate_anchors': True,
 				'draw_bboxes': True,
 				'exclude_infer_classes': ['guns', 'humans', 'knifes'],
 				'enable_transfer_learning': False,

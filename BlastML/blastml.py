@@ -149,6 +149,7 @@ class CFG:
 		self.darknet_exclude_infer_classes = object_detection['yolo']['exclude_infer_classes']
 		self.darknet_enable_transfer_learning = object_detection['yolo']['enable_transfer_learning']
 		self.darknet_transfer_learning_epoch_ratio = object_detection['yolo']['transfer_learning_epoch_ratio']
+		self.darknet_auto_estimate_anchors = object_detection['yolo']['auto_estimate_anchors']
 
 	def get_project_name(self):
 		return self.project_name
@@ -298,6 +299,9 @@ class CFG:
 
 	def get_darknet_transfer_learning_epoch_ratio(self):
 		return self.darknet_transfer_learning_epoch_ratio
+
+	def can_estimate_anchors(self):
+		return self.darknet_auto_estimate_anchors
 
 class DarkNet:
 	def __init__(self, cfg=None):
@@ -939,8 +943,10 @@ class DarkNet:
 		self.model = None
 		input_shape = (416, 416)  # multiple of 32, hw
 
-		# create anchors based on training+validation files before training
-		self.generate_anchors()
+		# estimate anchors based on training+validation files before training if enabled
+		if self.config.can_estimate_anchors():
+			self.generate_anchors()
+
 		self.anchors = self.get_anchors(self.anchors_path)
 
 		is_tiny_version = len(self.anchors) == 6  # default setting
