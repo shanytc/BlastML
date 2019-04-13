@@ -85,7 +85,7 @@ def main():
 		},
 		object_detection={
 			'yolo': {
-				'cfg': 'model/darknet/yolov3.cfg',
+				'cfg': 'model/darknet/tiny-yolov3-1c.cfg',
 				'weights': 'model/darknet/yolov3.weights',
 				'training_data': 'model/darknet/data/train.txt',
 				'class_names': 'model/darknet/data/classes.txt',
@@ -157,15 +157,15 @@ def main():
 	# net.yolo().export_to_keras()
 
 	# Calculate YOLOv3 anchors (this is done automatically when we train our model) and save them to anchors.txt (check darknet cfg)
-	#net.yolo().generate_anchors()
+	# net.yolo().generate_anchors()
 
 	# Convert RectLabel csv export file to YOLOv3 format used in this BlastML implementation
-	net.yolo().rectLabel_to_YOLOv3()
+	# net.yolo().rectLabel_to_YOLOv3()
 
 	# train yolo model using darknet with model/data
 	# net.yolo().create().compile().train()
 
 	# infer yolo model
-	# net.yolo().load_model().infer()
+	net.yolo().load_model().infer()
 
 main()

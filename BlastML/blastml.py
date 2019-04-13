@@ -1187,10 +1187,10 @@ class DarkNet:
 						label_size = draw.textsize(label, font)
 
 						top, left, bottom, right = box
-						top = max(0, np.floor(top - 80.5).astype('int32'))
-						left = max(0, np.floor(left - 60.5).astype('int32'))
-						bottom = min(image.size[1], np.floor(bottom - 80.5).astype('int32'))
-						right = min(image.size[0], np.floor(right - 60.5).astype('int32'))
+						top = max(0, np.floor(top - 0.5).astype('int32'))
+						left = max(0, np.floor(left - 0.5).astype('int32'))
+						bottom = min(image.size[1], np.floor(bottom - 0.5).astype('int32'))
+						right = min(image.size[0], np.floor(right - 0.5).astype('int32'))
 
 						print(label, (left, top), (right, bottom))
 
