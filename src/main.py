@@ -104,8 +104,8 @@ def main():
 				'auto_estimate_anchors': True,
 				'draw_bboxes': True,
 				'exclude_infer_classes': ['guns', 'humans', 'knifes'],
-				'enable_transfer_learning': False,
-				'transfer_learning_epoch_ratio': [50, 20]
+				'enable_transfer_learning': True,
+				'transfer_learning_epoch_ratio': [500, 250]
 			}
 		})
 
@@ -163,9 +163,9 @@ def main():
 	# net.yolo().rectLabel_to_YOLOv3()
 
 	# train yolo model using darknet with model/data
-	# net.yolo().create().compile().train()
+	net.yolo().create().compile().train()
 
 	# infer yolo model
-	net.yolo().load_model().infer()
+	# net.yolo().load_model().infer()
 
 main()
