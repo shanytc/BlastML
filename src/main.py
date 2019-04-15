@@ -1,5 +1,4 @@
 from BlastML.blastml import CFG, BlastML
-import pandas as pd
 
 # /Users/i337936/Desktop/
 # /home/ubuntu/projects/
@@ -160,12 +159,15 @@ def main():
 	# net.yolo().generate_anchors()
 
 	# Convert RectLabel csv export file to YOLOv3 format used in this BlastML implementation
-	# net.yolo().rectLabel_to_YOLOv3()
+	net.yolo().rectLabel_to_YOLOv3()
 
 	# train yolo model using darknet with model/data
-	net.yolo().create().compile().train()
+	# net.yolo().create().compile().train()
 
 	# infer yolo model
 	# net.yolo().load_model().infer()
+
+	# infer yolo model with webcame
+	#net.yolo().load_model().infer_webcam()
 
 main()

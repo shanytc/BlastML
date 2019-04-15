@@ -1109,6 +1109,101 @@ class DarkNet:
 
 		return self
 
+	def infer_webcam(self):
+		import cv2
+
+		bboxes = []
+		cap = cv2.VideoCapture(0)
+
+		while(True):
+			# Capture frame-by-frame
+			ret, original_frame = cap.read()
+			image = Image.fromarray(original_frame)
+
+			if self.config.darknet_input_size != (None, None):
+				assert self.config.darknet_input_size[0] % 32 == 0, 'Multiples of 32 required'
+				assert self.config.darknet_input_size[1] % 32 == 0, 'Multiples of 32 required'
+				boxed_image = self.letterbox_image(image, tuple(reversed(self.config.darknet_input_size)))
+			else:
+				new_image_size = (image.width - (image.width % 32), image.height - (image.height % 32))
+				boxed_image = self.letterbox_image(image, new_image_size)
+			image_data = np.array(boxed_image, dtype='float32')
+
+			image_data /= 255.
+			image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+
+			# infer the image
+			out_boxes, out_scores, out_classes = self.session.run(
+				[self.boxes, self.scores, self.classes],
+				feed_dict={
+					self.model.input: image_data,
+					self.input_image_shape: [image.size[1], image.size[0]],
+					K.learning_phase(): 0
+				})
+
+			bboxes.append({
+				'bboxes': out_boxes,
+				'count': len(out_boxes)
+			})
+
+			print("Boxes:" + str(len(out_boxes)))
+
+			if self.config.is_draw_bboxes_enabled() and len(out_boxes) > 0:
+				font = ImageFont.truetype(font=self.config.get_darknet_bboxes_font(), size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
+				thickness = (image.size[0] + image.size[1]) // 300
+
+				for i, c in reversed(list(enumerate(out_classes))):
+					predicted_class = self.class_names[c]
+					box = out_boxes[i]
+					score = out_scores[i]
+
+					label = '{} {:.0f}%'.format(predicted_class, score*100)
+					draw = ImageDraw.Draw(image)
+					label_size = draw.textsize(label, font)
+
+					top, left, bottom, right = box
+					top = max(0, np.floor(top - 0.5).astype('int32'))
+					left = max(0, np.floor(left - 0.5).astype('int32'))
+					bottom = min(image.size[1], np.floor(bottom - 0.5).astype('int32'))
+					right = min(image.size[0], np.floor(right - 0.5).astype('int32'))
+
+					print(label, (left, top), (right, bottom))
+
+					if top - label_size[1] >= 0:
+						text_origin = np.array([left, top - label_size[1]])
+					else:
+						text_origin = np.array([left, top + 1])
+
+					# My kingdom for a good redistributable image drawing library.
+					for i in range(thickness):
+						draw.rectangle(
+							[left + i, top + i, right - i, bottom - i],
+							outline=self.colors[c])
+
+					draw.rectangle(
+						[tuple(text_origin), tuple(text_origin + label_size)],
+						fill=self.colors[c])
+					draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+					del draw
+
+					# file_info = image_path.split(".")
+					# image.save(file_info[0] + "_infer.jpg")
+
+			# Our operations on the frame come here
+			# img = cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA)
+
+			# Display the resulting frame
+			frame = np.array(image)
+			frame[...,[0,2]]=frame[...,[2,0]]
+			cv2.imshow('frame', frame)
+			if cv2.waitKey(1) & 0xFF == ord('q'):
+				break
+
+		# When everything done, release the capture
+		cap.release()
+		cv2.destroyAllWindows()
+		return self
+
 	def infer(self):
 		# load image using Pillow
 		def img_loader(path):
@@ -1322,7 +1417,7 @@ class DarkNet:
 
 		index = 0
 		for c in lines:
-			labels[c] = index
+			labels[c.replace("\n", "")] = index
 			index += 1
 
 		# convert RectLabel tool (xml->csv) to YOLOv3 format
