@@ -11,7 +11,7 @@ import tensorflow as tf
 from keras.models import load_model
 from keras.models import Model
 from keras.models import Sequential, model_from_json
-from keras.layers import UpSampling2D, Concatenate, Add, Input, Dense, Conv2D, MaxPooling2D, Dropout, Flatten, ZeroPadding2D, BatchNormalization, LeakyReLU, AveragePooling2D, Lambda
+from keras.layers import UpSampling2D, Concatenate, Add, Input, Dense, Conv2D, MaxPooling2D, Dropout, Flatten, ZeroPadding2D, BatchNormalization, LeakyReLU, AveragePooling2D, Lambda, Reshape, Activation
 from keras.preprocessing.image import ImageDataGenerator
 from keras.layers.advanced_activations import LeakyReLU
 from keras.regularizers import l2
@@ -31,6 +31,7 @@ from timeit import default_timer as timer
 from functools import reduce
 from PIL import Image, ImageFont, ImageDraw
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
+from tqdm import tqdm
 
 #
 # Configurations:
@@ -85,7 +86,7 @@ from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
 
 
 class CFG:
-	def __init__(self, project={}, image={}, augmentation={}, hyper_params={}, multithreading={}, model={}, object_detection={}):
+	def __init__(self, project={}, image={}, augmentation={}, hyper_params={}, multithreading={}, model={}, object_detection={}, gan={}):
 		# Project settings
 		self.project_name = project['project_name']
 		self.project_root_path = project['root']
@@ -150,6 +151,17 @@ class CFG:
 		self.darknet_enable_transfer_learning = object_detection['yolo']['enable_transfer_learning']
 		self.darknet_transfer_learning_epoch_ratio = object_detection['yolo']['transfer_learning_epoch_ratio']
 		self.darknet_auto_estimate_anchors = object_detection['yolo']['auto_estimate_anchors']
+
+		# Gan settings - DCGAN
+		self.gan_type = 'gan'
+		if gan.get('dcgan', None) is not None:
+			self.dcgan_image_width = image['width']
+			self.dcgan_image_height = image['height']
+			self.dcgan_image_channels = image['channels']
+			self.dcgan_optimizer = gan['dcgan']['optimizer']
+			self.dcgan_save_images_interval = gan['dcgan']['save_images_interval']
+			self.dcgan_random_noise_dimension = gan['dcgan']['random_noise_dimension']
+			self.gan_type = 'dcgan'
 
 	def get_project_name(self):
 		return self.project_name
@@ -302,6 +314,9 @@ class CFG:
 
 	def can_estimate_anchors(self):
 		return self.darknet_auto_estimate_anchors
+
+	def get_gan_type(self):
+		return self.gan_type
 
 class DarkNet:
 	def __init__(self, cfg=None):
@@ -1054,6 +1069,9 @@ class DarkNet:
 
 		return self
 
+	def get_model(self):
+		return self.model
+
 	def load_model(self):
 		# TODO: remove this guys, since we already defined them above
 		def _get_class(path):
@@ -1107,6 +1125,57 @@ class DarkNet:
 
 		self.boxes, self.scores, self.classes = self.yolo_eval(self.model.output, self.infer_anchors, len(self.infer_class_names), self.input_image_shape, score_threshold=self.config.darknet_infer_score, iou_threshold=self.config.darknet_infer_iou)
 
+		return self
+
+	def export_to_pb(self):
+		def freeze_session(session, keep_var_names=None, output_names=None, clear_devices=True):
+			from tensorflow.python.framework.graph_util import convert_variables_to_constants
+			graph = session.graph
+			with graph.as_default():
+				freeze_var_names = list(set(v.op.name for v in tf.global_variables()).difference(keep_var_names or []))
+				output_names = output_names or []
+				output_names += [v.op.name for v in tf.global_variables()]
+				input_graph_def = graph.as_graph_def()
+				if clear_devices:
+					for node in input_graph_def.node:
+						node.device = ""
+				frozen_graph = convert_variables_to_constants(session, input_graph_def, output_names, freeze_var_names)
+				return frozen_graph
+
+		if self.model is None:
+			print("No model found to export")
+			return self
+
+		K.set_learning_phase(0)
+
+		# create a frozen-graph of the keras model
+		print("creating a frozen-graph of the keras model...")
+		frozen_graph = freeze_session(K.get_session(), output_names=[out.op.name for out in self.model.outputs])
+
+		# save model as .pb file
+		tf.train.write_graph(frozen_graph, self.config.get_model_output_path(), self.config.get_model_name() + ".darknet.pb", as_text=False)
+		print("export to protobuf completed.")
+		return self
+
+	def export_to_tf(self):
+		if self.model is None:
+			print("No model found to export")
+			return self
+		#
+		# Export Generates 4 files:
+		# -------------------------
+		# checkpoint defines the model checkpoint path which is "tf_model" in our case.
+		# .meta stores the graph structure,
+		# .data stores the values of each variable in the graph
+		# .index identifies the checkpoint.
+		#
+		print("exporting model to TensorFlow format...")
+		saver = tf.train.Saver()
+		sess = K.get_session()
+		saver.save(sess, self.config.get_model_output_path() + self.config.get_model_name() + ".tf")
+		fw = tf.summary.FileWriter('logs', sess.graph)
+		fw.close()
+		print("export to TensorFlow completed.")
 		return self
 
 	def infer_webcam(self):
@@ -1365,6 +1434,9 @@ class DarkNet:
 
 		# get files to cxalculate anchors from
 		files = self.get_training_files()  # get training data (combination of train + validation)
+
+		if len(files) == 0:
+			return self
 
 		# self.config.get_darknet_anchors()
 		for line in files:
@@ -1678,6 +1750,205 @@ class DarkNet:
 
 		return self
 
+
+class GAN:
+	def __init__(self, cfg=None, parent=None):
+		self.blast = parent
+		self.config = cfg
+		self.discriminator = None
+		self.generator = None
+		self.model = None
+		self.image_width = self.config.dcgan_image_width
+		self.image_height = self.config.dcgan_image_height
+		self.channels = self.config.dcgan_image_channels
+		self.image_shape = (self.config.dcgan_image_width, self.config.dcgan_image_height, self.config.dcgan_image_channels)
+
+	def dcgan(self):
+		def DCGanDiscriminator(self):
+			self.blast.create() \
+				.add_2d(filters=32, kernel=(3, 3), strides=(2, 2), input_shape=self.image_shape, padding="same") \
+				.add_leaky_relu(alpha=0.2) \
+				.add_dropout() \
+				.add_2d(filters=64, kernel=(3, 3), strides=(2, 2), padding="same") \
+				.add_zero_padding(padding=((0, 1), (0, 1))) \
+				.add_batch_normalize(momentum=0.8) \
+				.add_leaky_relu(alpha=0.2) \
+				.add_dropout(dropout=0.25) \
+				.add_2d(filters=128, kernel=(3, 3), strides=(2, 2), padding="same") \
+				.add_batch_normalize(momentum=0.8) \
+				.add_leaky_relu(alpha=0.2) \
+				.add_dropout(dropout=0.25) \
+				.add_2d(filters=256, kernel=(3, 3), strides=(1, 1), padding="same") \
+				.add_batch_normalize(momentum=0.8) \
+				.add_leaky_relu(alpha=0.2) \
+				.add_dropout(dropout=0.25) \
+				.add_2d(filters=512, kernel=(3, 3), strides=(1, 1), padding="same") \
+				.add_batch_normalize(momentum=0.8) \
+				.add_leaky_relu(alpha=0.2) \
+				.add_dropout(dropout=0.25) \
+				.add_flatten() \
+				.add_dense(size=1, activation='sigmoid') \
+				.show_model_summary()
+
+			model = self.blast.get_model()
+			input_image = Input(shape=self.image_shape)
+			self.blast.reset()
+			validity = model(input_image)
+
+			return Model(input_image, validity)
+
+		def DCGanGenerator(self,dimension=None):
+			self.blast.create() \
+				.add_dense(size=256*4*4, activation='relu', input_dim=dimension) \
+				.add_reshape(shape=(4, 4, 256)) \
+				.add_upsampling_2d() \
+				.add_2d(filters=256, kernel=(3, 3), padding="same") \
+				.add_batch_normalize(momentum=0.8) \
+				.add_activation("relu") \
+				.add_upsampling_2d() \
+				.add_2d(filters=256, kernel=(3, 3), padding="same") \
+				.add_batch_normalize(momentum=0.8) \
+				.add_activation("relu") \
+				.add_upsampling_2d() \
+				.add_2d(filters=128, kernel=(3, 3), padding="same") \
+				.add_batch_normalize(momentum=0.8) \
+				.add_activation("relu") \
+				.add_upsampling_2d() \
+				.add_2d(filters=128, kernel=(3, 3), padding="same") \
+				.add_batch_normalize(momentum=0.8) \
+				.add_activation("relu") \
+				.add_2d(filters=self.channels, kernel=(3, 3), padding="same") \
+				.add_activation("tanh") \
+				.show_model_summary()
+
+
+			model = self.blast.get_model()
+			input = Input(shape=(dimension,))
+			self.blast.reset()
+			generated_image = model(input)
+
+			#Change the model type from Sequential to Model (functional API) More at: https://keras.io/models/model/.
+			return Model(input,generated_image)
+
+		if self.config.get_gan_type() is not 'dcgan':
+			return self
+
+		# Just 10 times higher learning rate would result in generator loss being stuck at 0.
+		if self.config.dcgan_optimizer['type'] == 'adam':
+			optimizer = Adam(self.config.dcgan_optimizer['learning_rate'],self.config.dcgan_optimizer['beta_1'])
+
+		self.discriminator = DCGanDiscriminator(self)
+		self.discriminator.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
+		self.generator = DCGanGenerator(self, dimension=self.config.dcgan_random_noise_dimension)
+
+		# A placeholder for the generator input.
+		random_input = Input(shape=(self.config.dcgan_random_noise_dimension,))
+
+		# Generator generates images from random noise.
+		generated_image = self.generator(random_input)
+
+		# For the combined model we will only train the generator
+		self.discriminator.trainable = False
+
+		# Discriminator attempts to determine if image is real or generated
+		validity = self.discriminator(generated_image)
+
+		# Combined model = generator and discriminator combined.
+		# 1. Takes random noise as an input.
+		# 2. Generates an image.
+		# 3. Attempts to determine if image is real or generated.
+		self.model = Model(random_input,validity)
+		self.model.compile(loss="binary_crossentropy", optimizer=optimizer)
+		return self
+
+	def DCGanTrain(self):
+		def save_images(self,epoch):
+			#Save 25 generated images for demonstration purposes using matplotlib.pyplot.
+			rows, columns = 5, 5
+			noise = np.random.normal(0, 1, (rows * columns, self.config.dcgan_random_noise_dimension))
+			generated_images = self.generator.predict(noise)
+
+			generated_images = 0.5 * generated_images + 0.5
+
+			figure, axis = plt.subplots(rows, columns)
+			image_count = 0
+			for row in range(rows):
+				for column in range(columns):
+					axis[row,column].imshow(generated_images[image_count, :], cmap='spring')
+					axis[row,column].axis('off')
+					image_count += 1
+			figure.savefig(self.config.get_train_path()+"generated_%d.png" % epoch)
+			plt.close()
+
+		def get_training_data(datafolder):
+			print("Loading training data...")
+
+			training_data = []
+			#Finds all files in datafolder
+			filenames = os.listdir(datafolder)
+			for filename in tqdm(filenames):
+				#Combines folder name and file name.
+				path = os.path.join(datafolder,filename)
+				#Opens an image as an Image object.
+				image = Image.open(path)
+				#Resizes to a desired size.
+				image = image.resize((self.image_width,self.image_height),Image.ANTIALIAS)
+				#Creates an array of pixel values from the image.
+				pixel_array = np.asarray(image)
+
+				training_data.append(pixel_array)
+
+			#training_data is converted to a numpy array
+			training_data = np.reshape(training_data,(-1,self.image_width,self.image_height,self.channels))
+			return training_data
+
+		datafolder = self.config.get_train_path()
+		batch_size = self.config.get_batch_size()
+		epochs = self.config.get_num_epochs()
+		save_images_interval = self.config.dcgan_save_images_interval
+
+		training_data = get_training_data(datafolder)
+
+		# Map all values to a range between -1 and 1.
+		training_data = training_data / 127.5 - 1.
+
+		#Two arrays of labels. Labels for real images: [1,1,1 ... 1,1,1], labels for generated images: [0,0,0 ... 0,0,0]
+		labels_for_real_images = np.ones((batch_size, 1))
+		labels_for_generated_images = np.zeros((batch_size, 1))
+
+		for epoch in range(epochs):
+			# Select a random half of images
+			indices = np.random.randint(0, training_data.shape[0], batch_size)
+			real_images = training_data[indices]
+
+			#Generate random noise for a whole batch.
+			random_noise = np.random.normal(0,1,(batch_size,self.config.dcgan_random_noise_dimension))
+			#Generate a batch of new images.
+			generated_images = self.generator.predict(random_noise)
+
+			#Train the discriminator on real images.
+			discriminator_loss_real = self.discriminator.train_on_batch(real_images, labels_for_real_images)
+			#Train the discriminator on generated images.
+			discriminator_loss_generated = self.discriminator.train_on_batch(generated_images, labels_for_generated_images)
+			#Calculate the average discriminator loss.
+			discriminator_loss = 0.5 * np.add(discriminator_loss_real,discriminator_loss_generated)
+
+			#Train the generator using the combined model. Generator tries to trick discriminator into mistaking generated images as real.
+			generator_loss = self.model.train_on_batch(random_noise,labels_for_real_images)
+			print ("%d [Discriminator loss: %f, acc.: %.2f%%] [Generator loss: %f]" % (epoch, discriminator_loss[0], 100*discriminator_loss[1], generator_loss))
+
+			#if epoch % save_images_interval == 0:
+			save_images(self, epoch)
+
+		# Save the model for a later use
+		# self.generator.save("saved_models/facegenerator.h5")
+
+	def train(self):
+		if self.config.get_gan_type() is 'dcgan':
+			self.DCGanTrain()
+
+		return self
+
 class BlastML:
 	def __init__(self, cfg=None):
 		self.config = cfg
@@ -1692,6 +1963,13 @@ class BlastML:
 		self.history = None
 		self.bottleneck = None
 		self.Darknet = None
+		self.GAN = None
+
+	def gan(self):
+		if self.GAN is None:
+			self.GAN = GAN(self.config, self)
+
+		return self.GAN
 
 	# DarkNet CNN
 	def yolo(self):
@@ -1843,8 +2121,8 @@ class BlastML:
 		self.model.add(ZeroPadding2D(padding=padding, **kwargs))
 		return self
 
-	def add_leaky_relu(self):
-		self.model.add(LeakyReLU())
+	def add_leaky_relu(self, alpha=0.3):
+		self.model.add(LeakyReLU(alpha=alpha))
 		return self
 
 	def add_batch_normalize(self, **kwargs):
@@ -1869,6 +2147,18 @@ class BlastML:
 
 	def add_dense(self, size=512, **kwargs):
 		self.model.add(Dense(size, **kwargs))
+		return self
+
+	def add_reshape(self, shape=(0, 0)):
+		self.model.add(Reshape(shape))
+		return self
+
+	def add_upsampling_2d(self, **kwargs):
+		self.model.add(UpSampling2D())
+		return self
+
+	def add_activation(self, activation="relu"):
+		self.model.add(Activation(activation=activation))
 		return self
 
 	def add_basic_block(self, filters=64, kernel=(3, 3), activation='relu'):
@@ -1931,6 +2221,36 @@ class BlastML:
 
 		return self
 
+	def export_to_pb(self):
+		def freeze_session(session, keep_var_names=None, output_names=None, clear_devices=True):
+			from tensorflow.python.framework.graph_util import convert_variables_to_constants
+			graph = session.graph
+			with graph.as_default():
+				freeze_var_names = list(set(v.op.name for v in tf.global_variables()).difference(keep_var_names or []))
+				output_names = output_names or []
+				output_names += [v.op.name for v in tf.global_variables()]
+				input_graph_def = graph.as_graph_def()
+				if clear_devices:
+					for node in input_graph_def.node:
+						node.device = ""
+				frozen_graph = convert_variables_to_constants(session, input_graph_def, output_names, freeze_var_names)
+				return frozen_graph
+
+		if self.model is None:
+			print("No model found to export")
+			return self
+
+		K.set_learning_phase(0)
+
+		# create a frozen-graph of the keras model
+		print("creating a frozen-graph of the keras model...")
+		frozen_graph = freeze_session(K.get_session(), output_names=[out.op.name for out in self.model.outputs])
+
+		# save model as .pb file
+		tf.train.write_graph(frozen_graph, self.config.get_model_output_path(), self.config.get_model_name() + ".pb", as_text=False)
+		print("export to protobuf completed.")
+		return self
+
 	def export_to_tf(self):
 		if self.model is None:
 			print("No model found to export")
@@ -1944,11 +2264,13 @@ class BlastML:
 		# .index identifies the checkpoint.
 		#
 
+		print("exporting model to TensorFlow format...")
 		saver = tf.train.Saver()
 		sess = K.get_session()
 		saver.save(sess, self.config.get_model_output_path() + self.config.get_model_name() + ".tf")
 		fw = tf.summary.FileWriter('logs', sess.graph)
 		fw.close()
+		print("export to TensorFlow completed.")
 		return self
 
 	def show_model_summary(self):
