@@ -17,8 +17,8 @@ def main():
 			'model': 'model/',
 		},
 		image={
-			'width': 64,
-			'height': 64,
+			'width': 128,
+			'height': 128,
 			'channels': 3
 		},
 		model={
@@ -31,7 +31,7 @@ def main():
 			'reset_learn_phase': True
 		},
 		hyper_params={
-			'batch': 32,
+			'batch': 16,
 			'epochs': 100,
 			'classes': 5,
 			'class_mode': 'sparse',

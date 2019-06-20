@@ -1817,6 +1817,10 @@ class GAN:
 				.add_2d(filters=128, kernel=(3, 3), padding="same") \
 				.add_batch_normalize(momentum=0.8) \
 				.add_activation("relu") \
+				.add_upsampling_2d() \
+				.add_2d(filters=128, kernel=(3, 3), padding="same") \
+				.add_batch_normalize(momentum=0.8) \
+				.add_activation("relu") \
 				.add_2d(filters=self.channels, kernel=(3, 3), padding="same") \
 				.add_activation("tanh") \
 				.show_model_summary()
@@ -1864,7 +1868,7 @@ class GAN:
 	def DCGanTrain(self):
 		def save_images(self,epoch):
 			#Save 25 generated images for demonstration purposes using matplotlib.pyplot.
-			rows, columns = 5, 5
+			rows, columns = 2, 2
 			noise = np.random.normal(0, 1, (rows * columns, self.config.dcgan_random_noise_dimension))
 			generated_images = self.generator.predict(noise)
 
@@ -1877,7 +1881,7 @@ class GAN:
 					axis[row,column].imshow(generated_images[image_count, :], cmap='spring')
 					axis[row,column].axis('off')
 					image_count += 1
-			figure.savefig(self.config.get_train_path()+"generated_%d.png" % epoch)
+			figure.savefig(self.config.get_train_path()+"generated/generated_%d.png" % epoch)
 			plt.close()
 
 		def get_training_data(datafolder):
@@ -1887,10 +1891,16 @@ class GAN:
 			#Finds all files in datafolder
 			filenames = os.listdir(datafolder)
 			for filename in tqdm(filenames):
-				#Combines folder name and file name.
 				path = os.path.join(datafolder,filename)
+
+				if not os.path.isfile(path):
+					continue
+
+				if filename == '.DS_Store':
+					continue
+
 				#Opens an image as an Image object.
-				image = Image.open(path)
+				image = Image.open(path).convert('RGB')
 				#Resizes to a desired size.
 				image = image.resize((self.image_width,self.image_height),Image.ANTIALIAS)
 				#Creates an array of pixel values from the image.
@@ -1937,8 +1947,8 @@ class GAN:
 			generator_loss = self.model.train_on_batch(random_noise,labels_for_real_images)
 			print ("%d [Discriminator loss: %f, acc.: %.2f%%] [Generator loss: %f]" % (epoch, discriminator_loss[0], 100*discriminator_loss[1], generator_loss))
 
-			#if epoch % save_images_interval == 0:
-			save_images(self, epoch)
+			if epoch % 10 == 0:
+				save_images(self, epoch)
 
 		# Save the model for a later use
 		# self.generator.save("saved_models/facegenerator.h5")
