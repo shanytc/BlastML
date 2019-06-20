@@ -17,8 +17,8 @@ def main():
 			'model': 'model/',
 		},
 		image={
-			'width': 128,
-			'height': 128,
+			'width': 256,
+			'height': 256,
 			'channels': 3
 		},
 		model={
