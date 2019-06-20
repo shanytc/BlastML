@@ -32,7 +32,7 @@ def main():
 		},
 		hyper_params={
 			'batch': 16,
-			'epochs': 100,
+			'epochs': 3000,
 			'classes': 5,
 			'class_mode': 'sparse',
 			'shuffle': False,

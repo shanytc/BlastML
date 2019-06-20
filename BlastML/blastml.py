@@ -1881,6 +1881,9 @@ class GAN:
 					axis[row,column].imshow(generated_images[image_count, :], cmap='spring')
 					axis[row,column].axis('off')
 					image_count += 1
+
+			if not os.path.exists(self.config.get_train_path()+"generated"):
+				os.makedirs(self.config.get_train_path()+"generated")
 			figure.savefig(self.config.get_train_path()+"generated/generated_%d.png" % epoch)
 			plt.close()
 
@@ -1932,7 +1935,7 @@ class GAN:
 			real_images = training_data[indices]
 
 			#Generate random noise for a whole batch.
-			random_noise = np.random.normal(0,1,(batch_size,self.config.dcgan_random_noise_dimension))
+			random_noise = np.random.normal(0, 1, (batch_size, self.config.dcgan_random_noise_dimension))
 			#Generate a batch of new images.
 			generated_images = self.generator.predict(random_noise)
 
