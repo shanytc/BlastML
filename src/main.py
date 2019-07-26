@@ -165,9 +165,8 @@ def main():
 	# res = net.infer()
 	# print(res)  # show embeddings/classification results
 
-
 	############################
-	#   DVGAN (GAN) Examples   #
+	#   DCGAN (GAN) Examples   #
 	############################
 
 	net.gan().dcgan().train()
@@ -195,6 +194,6 @@ def main():
 	# net.yolo().load_model().export_to_pb()
 
 	# infer yolo model with webcame
-	#net.yolo().load_model().infer_webcam()
+	# net.yolo().load_model().infer_webcam()
 
 main()
