@@ -171,10 +171,11 @@ def main():
 
 
 	############################
-	#   DCGAN (GAN) Examples   #
+	#      (GAN) Examples      #
 	############################
 
 	net.gan().srgan().train()
+	# net.gan().dcgan().train()
 
 	############################
 	#   YOLO/Darknet Examples  #
