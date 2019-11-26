@@ -17,8 +17,8 @@ def main():
 			'model': 'model/',
 		},
 		image={
-			'width': 256,
-			'height': 256,
+			'width': 128,
+			'height': 128,
 			'channels': 3
 		},
 		model={
@@ -109,7 +109,7 @@ def main():
 		},
 		gan={
 			'dcgan':{
-				"save_images_interval": 100,
+				"save_images_interval": 10,
 				"random_noise_dimension": 100,
 				"optimizer": {
 					"type": 'adam',
@@ -194,7 +194,7 @@ def main():
 	# convert yolo model to protobuf
 	# net.yolo().load_model().export_to_pb()
 
-	# infer yolo model with webcame
-	#net.yolo().load_model().infer_webcam()
+	# infer yolo model with a webcam
+	# net.yolo().load_model().infer_webcam()
 
 main()

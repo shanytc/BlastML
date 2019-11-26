@@ -1802,15 +1802,11 @@ class GAN:
 				.add_dense(size=256*4*4, activation='relu', input_dim=dimension) \
 				.add_reshape(shape=(4, 4, 256)) \
 				.add_upsampling_2d() \
-				.add_2d(filters=256, kernel=(7, 7), padding="same") \
+				.add_2d(filters=256, kernel=(3, 3), padding="same") \
 				.add_batch_normalize(momentum=0.8) \
 				.add_activation("relu") \
 				.add_upsampling_2d() \
-				.add_2d(filters=256, kernel=(5, 5), padding="same") \
-				.add_batch_normalize(momentum=0.8) \
-				.add_activation("relu") \
-				.add_upsampling_2d() \
-				.add_2d(filters=128, kernel=(3, 3), padding="same") \
+				.add_2d(filters=256, kernel=(3, 3), padding="same") \
 				.add_batch_normalize(momentum=0.8) \
 				.add_activation("relu") \
 				.add_upsampling_2d() \
@@ -1835,7 +1831,7 @@ class GAN:
 			self.blast.reset()
 			generated_image = model(input)
 
-			#Change the model type from Sequential to Model (functional API) More at: https://keras.io/models/model/.
+			# Change the model type from Sequential to Model (functional API) More at: https://keras.io/models/model/.
 			return Model(input,generated_image)
 
 		if self.config.get_gan_type() is not 'dcgan':
@@ -1846,7 +1842,6 @@ class GAN:
 			optimizer = Adam(self.config.dcgan_optimizer['learning_rate'],self.config.dcgan_optimizer['beta_1'])
 
 		self.discriminator = DCGanDiscriminator(self)
-		self.discriminator.trainable = False
 		self.discriminator.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
 		self.generator = DCGanGenerator(self, dimension=self.config.dcgan_random_noise_dimension)
 
@@ -1917,7 +1912,6 @@ class GAN:
 		datafolder = self.config.get_train_path()
 		batch_size = self.config.get_batch_size()
 		epochs = self.config.get_num_epochs()
-		save_images_interval = self.config.dcgan_save_images_interval
 
 		training_data = get_training_data(datafolder)
 
@@ -1954,13 +1948,13 @@ class GAN:
 			# Train the generator using the combined model. Generator tries to trick discriminator into mistaking generated images as real.
 			generator_loss = self.model.train_on_batch(random_noise,labels_for_real_images)
 
-			print ("%d [Discriminator loss: %f, acc.: %.2f%%] [Generator loss: %f]" % (epoch, discriminator_loss[0], 100*discriminator_loss[1], generator_loss))
+			print ("%d [Discriminator loss: %f, acc.: %.2f%%] [Generator loss: %f]" % (epoch, discriminator_loss[0], 100 * discriminator_loss[1], generator_loss))
 
-			if epoch % 10 == 0:
+			if epoch % self.config.dcgan_save_images_interval == 0:
 				save_images(self, epoch)
 
 		# Save the model for a later use
-		# self.generator.save("saved_models/facegenerator.h5")
+		# self.generator.save("saved_models/generator.h5")
 
 	def train(self):
 		if self.config.get_gan_type() is 'dcgan':
