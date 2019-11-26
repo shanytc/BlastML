@@ -108,7 +108,7 @@ def main():
 			}
 		},
 		gan={
-			'dcgan':{
+			'dcgan': {
 				"save_images_interval": 10,
 				"random_noise_dimension": 100,
 				"optimizer": {
@@ -116,6 +116,10 @@ def main():
 					"learning_rate": 0.0002,
 					"beta_1": 0.5
 				}
+			},
+			'srgan': {
+				"train_test_ratio": 0.8,
+				"downscale_factor": 4
 			}
 		})
 
@@ -170,7 +174,7 @@ def main():
 	#   DCGAN (GAN) Examples   #
 	############################
 
-	net.gan().dcgan().train()
+	net.gan().srgan().train()
 
 	############################
 	#   YOLO/Darknet Examples  #
@@ -195,6 +199,6 @@ def main():
 	# net.yolo().load_model().export_to_pb()
 
 	# infer yolo model with webcame
-	#net.yolo().load_model().infer_webcam()
+	# net.yolo().load_model().infer_webcam()
 
 main()

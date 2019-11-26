@@ -13,7 +13,7 @@ from keras.models import Model
 from keras.models import Sequential, model_from_json
 from keras.layers import UpSampling2D, Concatenate, Add, Input, Dense, Conv2D, MaxPooling2D, Dropout, Flatten, ZeroPadding2D, BatchNormalization, LeakyReLU, AveragePooling2D, Lambda, Reshape, Activation
 from keras.preprocessing.image import ImageDataGenerator
-from keras.layers.advanced_activations import LeakyReLU
+from keras.layers.advanced_activations import LeakyReLU, PReLU
 from keras.regularizers import l2
 from keras.callbacks import History,TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 from keras import backend as K
@@ -152,8 +152,10 @@ class CFG:
 		self.darknet_transfer_learning_epoch_ratio = object_detection['yolo']['transfer_learning_epoch_ratio']
 		self.darknet_auto_estimate_anchors = object_detection['yolo']['auto_estimate_anchors']
 
-		# Gan settings - DCGAN
+		# Gan Settings
 		self.gan_type = 'gan'
+
+		# DC GAN
 		if gan.get('dcgan', None) is not None:
 			self.dcgan_image_width = image['width']
 			self.dcgan_image_height = image['height']
@@ -162,6 +164,15 @@ class CFG:
 			self.dcgan_save_images_interval = gan['dcgan']['save_images_interval']
 			self.dcgan_random_noise_dimension = gan['dcgan']['random_noise_dimension']
 			self.gan_type = 'dcgan'
+
+		# SuperResolution Gan
+		if gan.get('srgan', None) is not None:
+			self.srgan_image_width = image['width']
+			self.srgan_image_height = image['height']
+			self.srgan_image_channels = image['channels']
+			self.srgan_train_test_ratio = gan['srgan']['train_test_ratio']
+			self.srgan_downscale_factor = gan['srgan']['downscale_factor']
+			self.gan_type = 'srgan'
 
 	def get_project_name(self):
 		return self.project_name
@@ -1763,6 +1774,54 @@ class GAN:
 		self.channels = self.config.dcgan_image_channels
 		self.image_shape = (self.config.dcgan_image_width, self.config.dcgan_image_height, self.config.dcgan_image_channels)
 
+	def srgan(self):
+		def SRGanDiscriminator(self):
+			model = self.blast.get_model()
+
+		def SRGanGenerator(self, shape=None):
+			def res_block_gen():
+				self.blast.add_2d(kernel=(3, 3), filters=64, strides=(1, 1), padding="same") \
+					.add_batch_normalize(momentum=0.5) \
+					.add_parametric_leaky_relu(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1, 2]) \
+					.add_2d(kernel=(3, 3), filters=64, strides=(1, 1), padding="same") \
+					.add_batch_normalize(momentum=0.5)
+
+			def up_sampling_block():
+				self.blast.add_2d(filters=256, kernel=(3, 3), strides=(1, 1), padding="same") \
+					.add_upsampling_2d(size=2) \
+					.add_leaky_relu(alpha=0.2)
+
+			# create model
+			self.blast.create() \
+				.add_2d(filters=64, kernel=(9, 9), strides=(1, 1), input_shape=shape, padding="same") \
+				.add_parametric_leaky_relu(alpha_initializer='zeros', alpha_regularizer=None, alpha_constraint=None, shared_axes=[1, 2]) \
+
+			for i in range(16):
+				res_block_gen()
+
+			self.blast.add_2d(kernel=(3, 3), filters=64, strides=(1, 1), padding="same") \
+				.add_batch_normalize(momentum=0.5)
+
+			for i in range(2):
+				up_sampling_block()
+
+			self.blast.add_2d(kernel=(3, 3), filters=64, strides=(1, 1), padding="same") \
+				.add_activation(activation='tanh')
+
+			model = self.blast.get_model()
+			input_image = Input(shape=shape)
+			self.blast.reset()
+			validity = model(input_image)
+
+			return Model(input_image, validity)
+
+		if self.config.get_gan_type() is not 'srgan':
+			return self
+
+		self.discriminator = SRGanDiscriminator(self)
+		self.generator = SRGanGenerator(self, shape=(self.image_shape[0]//self.config.srgan_downscale_factor, self.image_shape[1]//self.config.srgan_downscale_factor, self.image_shape[2]))
+		return self
+
 	def dcgan(self):
 		def DCGanDiscriminator(self):
 			self.blast.create() \
@@ -1832,7 +1891,7 @@ class GAN:
 			generated_image = model(input)
 
 			# Change the model type from Sequential to Model (functional API) More at: https://keras.io/models/model/.
-			return Model(input,generated_image)
+			return Model(input, generated_image)
 
 		if self.config.get_gan_type() is not 'dcgan':
 			return self
@@ -1863,6 +1922,10 @@ class GAN:
 		# 3. Attempts to determine if image is real or generated.
 		self.model = Model(random_input,validity)
 		self.model.compile(loss="binary_crossentropy", optimizer=optimizer)
+		return self
+
+	def SRGanTrain(self):
+		print("training sr gan")
 		return self
 
 	def DCGanTrain(self):
@@ -1959,6 +2022,9 @@ class GAN:
 	def train(self):
 		if self.config.get_gan_type() is 'dcgan':
 			self.DCGanTrain()
+
+		if self.config.get_gan_type() is 'srgan':
+			self.SRGanTrain()
 
 		return self
 
@@ -2132,6 +2198,10 @@ class BlastML:
 
 	def add_zero_padding(self, padding=(1, 1), **kwargs):
 		self.model.add(ZeroPadding2D(padding=padding, **kwargs))
+		return self
+
+	def add_parametric_leaky_relu(self, **kwargs):
+		self.model.add(PReLU(**kwargs))
 		return self
 
 	def add_leaky_relu(self, alpha=0.3):
