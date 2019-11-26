@@ -167,7 +167,7 @@ def main():
 
 
 	############################
-	#   DVGAN (GAN) Examples   #
+	#   DCGAN (GAN) Examples   #
 	############################
 
 	net.gan().dcgan().train()
@@ -194,7 +194,7 @@ def main():
 	# convert yolo model to protobuf
 	# net.yolo().load_model().export_to_pb()
 
-	# infer yolo model with a webcam
-	# net.yolo().load_model().infer_webcam()
+	# infer yolo model with webcame
+	#net.yolo().load_model().infer_webcam()
 
 main()
